@@ -3,11 +3,22 @@
 #include<filesystem>
 #include<dirent.h>
 using namespace std;
+# define CLIENT_MAX 10000
 
-
-# define port 8080
-
-
+class Client{
+private:
+    vector<string> downloads;
+public:
+    int client_id;
+    int in_port;
+    int unique_private_id;
+    int im_neighbours;
+    vector<pair<int,int>> neighbours;
+    int no_files;
+    vector<string> files;
+    vector<string> myfiles;
+   
+};
 
 int main(int argc, char* argv[]){
 // getting data   
@@ -20,18 +31,13 @@ int main(int argc, char* argv[]){
     string config = argv[1]; 
     string dir_path = argv[2];
 
+    Client C; // our client 
 
     // DATA From Config File
-    int client_id;
-    int in_port;
-    int unique_private_id;
-    int im_neighbours;
-    vector<pair<int,int>> neighbours;
-    int no_files;
-    vector<string> files;
+    
 
     // Directory contents
-    vector<string> myfiles;
+    
 
     // Open Config file
     indata.open(config);
@@ -54,21 +60,21 @@ int main(int argc, char* argv[]){
     }
 
     istringstream iss0(lines[0]);
-    iss0 >> client_id >> in_port >> unique_private_id;
+    iss0 >> C.client_id >> C.in_port >> C.unique_private_id;
 
     istringstream iss1(lines[1]);
-    iss1 >> im_neighbours;
+    iss1 >> C.im_neighbours;
 
     istringstream iss2(lines[2]);
-    for(int  i = 0; i< im_neighbours;i++){
+    for(int  i = 0; i< C.im_neighbours;i++){
         int a, b;
         iss2>>a>>b;
-        neighbours.push_back(make_pair(a,b));
+        C.neighbours.push_back(make_pair(a,b));
     }
     istringstream iss3(lines[3]);
-    iss3>>no_files;
-    for(int i = 0; i < no_files;i++){
-        files.push_back(lines[4+i]);
+    iss3>>C.no_files;
+    for(int i = 0; i < C.no_files;i++){
+        C.files.push_back(lines[4+i]);
     }
 
     // Getting my files
@@ -83,7 +89,7 @@ int main(int argc, char* argv[]){
         {
             if(d->d_type == DT_REG ||d->d_type == DT_UNKNOWN ){
                 cout<<d->d_name<<endl;
-                myfiles.push_back(string(d->d_name));
+                C.myfiles.push_back(string(d->d_name));
             }
         }
         closedir(dr);
@@ -93,7 +99,9 @@ int main(int argc, char* argv[]){
     
     
     // Establishing Connections
-        
+    
+
+    
 
 
     return 0; 
