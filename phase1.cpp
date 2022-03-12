@@ -2,8 +2,19 @@
 #include<bits/stdc++.h>
 #include<filesystem>
 #include<dirent.h>
+#include <arpa/inet.h>
+#include <errno.h>
+
+#include <unistd.h>
+#define CLIENT_MAX  10000
+#define MAXBUF		1024
+#define MAXIP		16
+
 using namespace std;
-# define CLIENT_MAX 10000
+string loopback;
+char buffer[MAXBUF];
+
+
 
 class Client{
 private:
@@ -19,6 +30,45 @@ public:
     vector<string> myfiles;
    
 };
+
+int SetAddress(string comp, struct sockaddr_in *Addr)
+{	
+    string s = "127.0.0.1:"+comp;
+
+    char Composite[s.length()];
+    for(int i = 0;i<s.length();i++){
+        Composite[i] = s[i];
+    }
+    cout<<Composite<<endl;
+    int i;
+	char IPAddress[MAXIP];
+
+	bzero(Addr, sizeof(*Addr));
+	Addr->sin_family = AF_INET;
+	for ( i = 0; Composite[i] != ':'  &&  Composite[i] != 0  &&  i < MAXIP; i++ )
+		IPAddress[i] = Composite[i];
+	IPAddress[i] = 0;
+	if ( Composite[i] == ':' )
+		Addr->sin_port = htons(atoi(Composite+i+1));
+	else
+		Addr->sin_port = 0;
+	if ( *IPAddress == 0 )
+	{
+		Addr->sin_addr.s_addr = INADDR_ANY;
+		return 0;
+	}
+	else
+		return ( inet_aton(IPAddress, &Addr->sin_addr) == 0 );
+}
+
+
+
+// int SetAddress2(int port , struct sockaddr_in *Addr){
+//     Addr->sin_family = AF_INET;
+//     Addr->sin_port = htons(port);
+//     return ( inet_aton(IPAddress, &Addr->sin_addr) == 0 );
+
+// }
 
 int main(int argc, char* argv[]){
 // getting data   
@@ -99,10 +149,73 @@ int main(int argc, char* argv[]){
     
     
     // Establishing Connections
+    int sd;
+	struct sockaddr_in addr;
+
+    if ( (sd = socket(PF_INET, SOCK_DGRAM, 0)) < 0 )
+	{
+		perror("Socket");
+		exit(errno);
+	}
+    //loopback = "127.0.0.1:";
+    cout<<C.client_id<<" " <<C.in_port<<endl ;
+    if ( SetAddress(to_string(C.in_port), &addr) != 0 )
+	{
+		perror("in_port");
+		exit(errno);
+	}
+	if ( bind(sd, (struct sockaddr *)&addr, sizeof(addr)) != 0 )
+	{
+		perror("Bind");
+		exit(errno);
+	}
+    cout << "Socket binded"<<endl;
     
-
+    for (int i= 0; i< C.im_neighbours; i++ ){
+        
+        if ( SetAddress( to_string(C.neighbours[i].second), &addr) != 0 )
+	    {
+		    perror(argv[1]);
+		    exit(errno);
+	    }
     
+        if ( connect(sd, (struct sockaddr *)&addr, sizeof(addr)) != 0 )
+	    {
+		    perror("Connect");
+		    exit(errno);
+	    }
+        else{
+            cout<<"Connected to "<<C.neighbours[i].first<<endl;
+        }
+        //sleep(1);
+    }
+    string mess = to_string(C.client_id) +":" +to_string(C.unique_private_id)+ ":" + to_string(C.in_port);
+    
+    
+    
+    bool est_con = false;
+    std::regex regex("\\:");
+    while(!est_con){
+        send(sd, mess.c_str(), mess.length(), 0);
+        int bytes_read;
 
+		bzero(buffer, sizeof(buffer));
+		bytes_read = recv(sd, buffer, sizeof(buffer), 0);
+        if(bytes_read>0){
+            printf("Msg: %s\n", buffer);
+            send(sd, "ack", strlen("ack"), 0);
+        // std::vector<std::string> out(
+        //             std::sregex_token_iterator(mess.begin(), mess.end(), regex, -1),
+        //             std::sregex_token_iterator()
+        //             );
+        //     for (auto &s: out) {
+        //     std::cout << s << std::endl;
+        sleep(1);
+    }
 
+    }
+    
+    
+    
     return 0; 
 }
