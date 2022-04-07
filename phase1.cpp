@@ -33,7 +33,7 @@ public:
     int no_files;
     vector<string> files;
     vector<string> myfiles;
-   
+    map<int,bool> connected;
 };
 
 
@@ -163,11 +163,20 @@ int main(int argc, char* argv[]){
     else
         cout<<"\nError Occurred!"<<endl;
     
+
+
+    // initialising all connected to false
+    for(auto item:C.neighbours){
+        C.connected[item.first] = false;
+    }
+
+    
+
     
     // Establishing Connections
     int opt = TRUE;
     int master_socket, addrlen, new_socket, 
-    client_socket[C.im_neighbours],max_clients = C.im_neighbours, 
+    client_socket[C.im_neighbours],client_in[C.im_neighbours],max_clients = C.im_neighbours, 
     activity,i ,valread, sd;
 	struct sockaddr_in address;
     int max_sd;
@@ -175,11 +184,21 @@ int main(int argc, char* argv[]){
     fd_set readfds;
     fd_set writefds;
     
+    // timeout 
+    struct timeval timeout;      
+    timeout.tv_sec = 10;
+    timeout.tv_usec = 0;   
+
+    //info string
+    string mess = to_string(C.client_id) +":" +to_string(C.unique_private_id)+ ":" + to_string(C.in_port);    
+
     // initialise client_socket to 0
     for(i = 0; i<max_clients; i++){
         client_socket[i]=0;
     }
-
+    for(int i = 0; i < C.im_neighbours;i++){
+        client_in[i]=0;
+    }
     //create master socket
     if((master_socket  = socket(AF_INET,SOCK_STREAM,0)) == 0){
         perror("socket failed");
@@ -194,7 +213,7 @@ int main(int argc, char* argv[]){
         perror("setsockopt");
         exit(EXIT_FAILURE);
     }
-
+    
     //type of socket created;
     address.sin_family = AF_INET;
     address.sin_addr.s_addr =  INADDR_ANY;
@@ -203,34 +222,19 @@ int main(int argc, char* argv[]){
     if (bind(master_socket, (struct sockaddr *)&address, sizeof(address))<0) 
     {
         perror("bind failed");
+        printf("on port %d",C.in_port);
         exit(EXIT_FAILURE);
     }
     int on = 1;
-    //if (ioctl(master_socket, FIONBIO, &on) < 0) {
-    //            perror("ioctl F_SETFL, FNDELAY");
-    //            exit(1);
-    //        }
+    
 
-    for(auto item:C.neighbours){
-            struct sockaddr_in address1;
-            address1.sin_family = AF_INET;
-            address1.sin_addr.s_addr =  INADDR_ANY;
-            address1.sin_port = htons(item.second);
-
-            if ( connect(master_socket, (struct sockaddr *)&address1, sizeof(address1)) != 0 )
-	        {
-		        perror("Connect");
-                if(errno != EINPROGRESS) exit(errno);
-	        }
-            else{
-                printf("request sent to %d\n", item.first);
-            }
-        }
+    
+    
 
 
     printf("Listener on port %d \n", C.in_port);
 
-    if (listen(master_socket, 3) < 0)
+    if (listen(master_socket, 5) < 0)
     {
         perror("listen");
         exit(EXIT_FAILURE);
@@ -240,15 +244,79 @@ int main(int argc, char* argv[]){
     addrlen = sizeof(address);
     puts("Waiting for connections ...");
 
-    while(TRUE){
+    if (ioctl(master_socket, FIONBIO, &on) < 0) {
+               perror("ioctl F_SETFL, FNDELAY");
+               exit(1);
+          }
+
+    
+    sleep(10);
+    
+    //int MAXTRY = 10;
+    while(true){
+        //MAXTRY--;
+
+
         //clear the socket set
         FD_ZERO(&readfds);
- 
+
+        int tpi=0;
+        for(auto item:C.neighbours){
+            if(C.connected[item.first]) {tpi++;continue;}
+            struct sockaddr_in address1;
+            address1.sin_family = AF_INET;
+            address1.sin_addr.s_addr =  INADDR_ANY;
+            address1.sin_port = htons(item.second);
+            int sd =socket(AF_INET,SOCK_STREAM,0);
+            if(sd>0){
+                client_in[tpi] = sd;
+                FD_SET(sd, &readfds);
+                if(sd > max_sd){
+                    max_sd  = sd;
+                }
+            }
+            else{tpi++;continue;}
+            
+            if ( connect(client_in[tpi], (struct sockaddr *)&address1, sizeof(address1)) != 0 )
+	        {
+		        perror("Connect");
+
+                //continue;
+                //if(errno != EINPROGRESS) exit(errno);
+	        }
+            else{
+                printf("form %d",C.client_id);
+                printf("request sent to %d\n", item.first);
+                C.connected[item.first] = true;
+            }
+            tpi++;
+
+        }
+
         //add master socket to set
         FD_SET(master_socket, &readfds);
-        max_sd = master_socket;
+        if(master_socket > max_sd){
+            max_sd  = master_socket;
+        }
         
         
+        for(i = 0; i< C.im_neighbours; i++){
+            sd = client_in[i];
+            int on =1;
+            if (ioctl(sd, FIONBIO, &on) < 0) {
+                perror("ioctl F_SETFL, FNDELAY");
+                exit(1);
+            }       
+            // if valid socket descriptor then add to read list
+            if(sd>0){
+                FD_SET(sd, &readfds);
+                
+            }
+            //highest file descriptor number, need it for the select function
+            if(sd > max_sd)
+				max_sd = sd; 
+        }
+
 
         //add child sockets to set
         for(i = 0; i< max_clients; i++){
@@ -261,7 +329,7 @@ int main(int argc, char* argv[]){
             // if valid socket descriptor then add to read list
             if(sd>0){
                 FD_SET(sd, &readfds);
-                FD_SET(sd, &writefds);
+                
             }
             //highest file descriptor number, need it for the select function
             if(sd > max_sd)
@@ -269,14 +337,15 @@ int main(int argc, char* argv[]){
         }
 
         
-        
+        //cout<<"here1"<<endl;
         // wait for an activity with time out
         activity = select(max_sd+1,&readfds,NULL,NULL,NULL);
         if ((activity < 0) && (errno!=EINTR)) 
         {
             printf("select error");
+            break;
         }
-
+        //cout<<"here2"<<endl;
 
 
         if (FD_ISSET(master_socket, &readfds)) 
@@ -284,14 +353,19 @@ int main(int argc, char* argv[]){
             if ((new_socket = accept(master_socket, (struct sockaddr *)&address, (socklen_t*)&addrlen))<0)
             {
                 perror("accept");
-                exit(EXIT_FAILURE);
+                //exit(EXIT_FAILURE);
             }
-         
+            if (ioctl(new_socket, FIONBIO, &on) < 0) {
+                perror("ioctl F_SETFL, FNDELAY");
+                exit(1);
+            }
             //inform user of socket number - used in send and receive commands
             printf("New connection , socket fd is %d , ip is : %s , port : %d \n" , new_socket , inet_ntoa(address.sin_addr) , ntohs(address.sin_port));
            
             //send new connection greeting message
-            if( send(new_socket, "ECHO Daemon v1.0 \r\n", strlen("ECHO Daemon v1.0 \r\n"), 0) != strlen("ECHO Daemon v1.0 \r\n") ) 
+            
+
+            if( send(new_socket, mess.c_str(),mess.length(), 0) != mess.length() ) 
             {
                 perror("send");
             }
@@ -307,17 +381,26 @@ int main(int argc, char* argv[]){
                     client_socket[i] = new_socket;
                     printf("Adding to list of sockets as %d\n" , i);
 					
-					break;
+                    break;
                 }
             }
 
-            //else its some IO operation on some other socket :)
-        for (i = 0; i < max_clients; i++) 
+           
+
+        //else its some IO operation on some other socket :)
+        for (i = 0; i < C.im_neighbours; i++) 
         {
-            sd = client_socket[i];
-             
+            cout<<"here";
+            sd = client_in[i];
+            if(!sd>0) continue;
+            if (ioctl(sd, FIONBIO, &on) < 0) {
+                perror("ioctl F_SETFL, FNDELAY");
+                exit(1);
+            }
+            
             if (FD_ISSET( sd , &readfds)) 
             {
+                cout<<"thisloop"<<endl;
                 //Check if it was for closing , and also read the incoming message
                 if ((valread = read( sd , buffer1, 1024)) == 0)
                 {
@@ -329,103 +412,24 @@ int main(int argc, char* argv[]){
                     close( sd );
                     client_socket[i] = 0;
                 }
-                 
+                
                 //Echo back the message that came in
                 else
                 {
                     //set the string terminating NULL byte on the end of the data read
+                    
+                    cout<<buffer1;
                     buffer1[valread] = '\0';
-                    send(sd , buffer1 , strlen(buffer1) , 0 );
+                    //send(sd , buffer1 , strlen(buffer1) , 0 );
                 }
             }
         }
 
         }
+        
     }
 
-    // Create a listening TCP socket
-    //listenfd = socket(AF_INET, SOCK_STREAM, 0);
-   // bzero(&servaddr, sizeof(servaddr));
-    //servaddr.sin_family = AF_INET;
-    //servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    //servaddr.sin_port = htons(C.in_port);
-
-    //binding server addr struct to listenfd
-    //bind(listenfd, (struct sockaddr*)&servaddr, sizeof(servaddr));
-    //listen(listenfd,5);
-
-    //create udp socket
-
-
-
-
-
-    // if ( (sd = socket(PF_INET, SOCK_DGRAM, 0)) < 0 )
-	// {
-	// 	perror("Socket");
-	// 	exit(errno);
-	// }
-    // //loopback = "127.0.0.1:";
-    // cout<<C.client_id<<" " <<C.in_port<<endl ;
-    // if ( SetAddress(to_string(C.in_port), &addr) != 0 )
-	// {
-	// 	perror("in_port");
-	// 	exit(errno);
-	// }
-	// if ( bind(sd, (struct sockaddr *)&addr, sizeof(addr)) != 0 )
-	// {
-	// 	perror("Bind");
-	// 	exit(errno);
-	// }
-    // cout << "Socket binded"<<endl;
     
-    // for (int i= 0; i< C.im_neighbours; i++ ){
-        
-    //     if ( SetAddress( to_string(C.neighbours[i].second), &addr) != 0 )
-	//     {
-	// 	    perror(argv[1]);
-	// 	    exit(errno);
-	//     }
-    
-    //     if ( connect(sd, (struct sockaddr *)&addr, sizeof(addr)) != 0 )
-	//     {
-	// 	    perror("Connect");
-	// 	    exit(errno);
-	//     }
-    //     else{
-    //         cout<<"Connected to "<<C.neighbours[i].first<<endl;
-    //     }
-    //     //sleep(1);
-    // }
-    // string mess = to_string(C.client_id) +":" +to_string(C.unique_private_id)+ ":" + to_string(C.in_port);
-    
-    
-
-
-
-
-    
-    // bool est_con = false;
-    // std::regex regex("\\:");
-    // while(!est_con){
-    //     send(sd, mess.c_str(), mess.length(), 0);
-    //     int bytes_read;
-
-	// 	bzero(buffer, sizeof(buffer));
-	// 	bytes_read = recv(sd, buffer, sizeof(buffer), 0);
-    //     if(bytes_read>0){
-    //         printf("Msg: %s\n", buffer);
-    //         send(sd, "ack", strlen("ack"), 0);
-    //     // std::vector<std::string> out(
-    //     //             std::sregex_token_iterator(mess.begin(), mess.end(), regex, -1),
-    //     //             std::sregex_token_iterator()
-    //     //             );
-    //     //     for (auto &s: out) {
-    //     //     std::cout << s << std::endl;
-    //     sleep(1);
-    // }
-
-    // }
     
     
     
