@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
+#include<thread>
 #define CLIENT_MAX  10000
 #define MAXBUF		1024
 #define MAXIP		16
@@ -84,6 +85,58 @@ bool SetSocketBlockingEnabled(int fd, bool blocking)
 // 	else
 // 		return ( inet_aton(IPAddress, &Addr->sin_addr) == 0 );
 // }
+
+void cus_send(int new_socket,fd_set readfds,string mess){
+    int on = 0;
+    if (ioctl(new_socket, FIONBIO, &on) < 0) {
+               perror("ioctl F_SETFL, FNDELAY");
+               exit(1);
+          }
+
+    if( send(new_socket, mess.c_str(),mess.length(), 0) != mess.length() ) 
+            {
+                perror("send");
+            }
+    puts("Welcome message sent successfully");
+}
+
+void cust_recv(int sd, fd_set readfds){
+    int on = 0;
+    if (ioctl(sd, FIONBIO, &on) < 0) {
+               perror("ioctl F_SETFL, FNDELAY");
+               exit(1);
+          }
+    if (FD_ISSET( sd , &readfds)) 
+            {
+                int valread,addrlen;
+                struct sockaddr_in address;
+            //    cout<<"thisloop"<<endl;
+                //Check if it was for closing , and also read the incoming message
+                cout<<"reading";
+                valread = read( sd , buffer1, 1024);
+                cout<<"valread";
+                if (valread == 0)
+                {
+                    //Somebody disconnected , get his details and print
+                    getpeername(sd , (struct sockaddr*)&address , (socklen_t*)&addrlen);
+                    printf("Host disconnected , ip %s , port %d \n" , inet_ntoa(address.sin_addr) , ntohs(address.sin_port));
+                     
+                    //Close the socket and mark as 0 in list for reuse
+                    close( sd );
+                    //client_socket[i] = 0;
+                }
+                
+                //Echo back the message that came in
+                else
+                {
+                    //set the string terminating NULL byte on the end of the data read
+                    
+                    cout<<buffer1<<endl;
+                    buffer1[valread] = '\0';
+                    //send(sd , mess.c_str() , mess.length() , 0 );
+                }
+            }
+}
 
 
 int main(int argc, char* argv[]){
@@ -179,7 +232,7 @@ int main(int argc, char* argv[]){
     client_socket[C.im_neighbours],client_in[C.im_neighbours],max_clients = C.im_neighbours, 
     activity,i ,valread, sd;
 	struct sockaddr_in address;
-    int max_sd;
+    int max_sd=0;
     // set of socket discriptors
     fd_set readfds;
     fd_set writefds;
@@ -188,7 +241,7 @@ int main(int argc, char* argv[]){
     struct timeval timeout;      
     timeout.tv_sec = 10;
     timeout.tv_usec = 0;   
-
+  
     //info string
     string mess = to_string(C.client_id) +":" +to_string(C.unique_private_id)+ ":" + to_string(C.in_port);    
 
@@ -253,9 +306,11 @@ int main(int argc, char* argv[]){
     sleep(10);
     
     //int MAXTRY = 10;
+    vector<thread> process1;
+    vector<thread> process2;
     while(true){
         //MAXTRY--;
-
+        process1.clear();
 
         //clear the socket set
         FD_ZERO(&readfds);
@@ -285,12 +340,22 @@ int main(int argc, char* argv[]){
                 //if(errno != EINPROGRESS) exit(errno);
 	        }
             else{
-                printf("form %d",C.client_id);
+                printf("form %d",sd);
                 printf("request sent to %d\n", item.first);
                 C.connected[item.first] = true;
             }
             tpi++;
 
+        }
+
+        for(int i = 0; i < C.im_neighbours; i++){
+            int sd = client_in[i];
+            if(sd>0){
+                FD_SET(sd, &readfds);
+                if(sd > max_sd){
+                    max_sd  = sd;
+                }
+            }
         }
 
         //add master socket to set
@@ -310,36 +375,41 @@ int main(int argc, char* argv[]){
             // if valid socket descriptor then add to read list
             if(sd>0){
                 FD_SET(sd, &readfds);
-                
+                if(sd > max_sd)
+				{max_sd = sd;}
             }
             //highest file descriptor number, need it for the select function
-            if(sd > max_sd)
-				max_sd = sd; 
+             
         }
 
 
         //add child sockets to set
         for(i = 0; i< max_clients; i++){
             sd = client_socket[i];
+                   
+            // if valid socket descriptor then add to read list
+            if(sd>0){
+                //cout<<sd<<" "<<max_sd<<endl;
+                FD_SET(sd, &readfds);
+                if(sd > max_sd){
+				    max_sd = sd;
+                }
+            }
+
             int on =1;
             if (ioctl(sd, FIONBIO, &on) < 0) {
                 perror("ioctl F_SETFL, FNDELAY");
                 exit(1);
-            }       
-            // if valid socket descriptor then add to read list
-            if(sd>0){
-                FD_SET(sd, &readfds);
-                
             }
             //highest file descriptor number, need it for the select function
-            if(sd > max_sd)
-				max_sd = sd; 
+             
         }
 
         
         //cout<<"here1"<<endl;
         // wait for an activity with time out
         activity = select(max_sd+1,&readfds,NULL,NULL,NULL);
+        //cout<<activity;
         if ((activity < 0) && (errno!=EINTR)) 
         {
             printf("select error");
@@ -364,13 +434,10 @@ int main(int argc, char* argv[]){
            
             //send new connection greeting message
             
-
-            if( send(new_socket, mess.c_str(),mess.length(), 0) != mess.length() ) 
-            {
-                perror("send");
-            }
+            process1.push_back(thread(cus_send,new_socket,readfds,mess));
+            
              
-            puts("Welcome message sent successfully");
+            
              
             //add new socket to array of sockets
             for (i = 0; i < max_clients; i++) 
@@ -386,47 +453,40 @@ int main(int argc, char* argv[]){
             }
 
            
-
+        cout<<"here";
+        }
         //else its some IO operation on some other socket :)
         for (i = 0; i < C.im_neighbours; i++) 
         {
-            cout<<"here";
+            
             sd = client_in[i];
-            if(!sd>0) continue;
+            //cout<<sd<<endl;
+            if(!(sd>0)) continue;
             if (ioctl(sd, FIONBIO, &on) < 0) {
                 perror("ioctl F_SETFL, FNDELAY");
                 exit(1);
             }
+            cout<<"thisone"<<FD_ISSET( sd , &readfds)<<endl;
             
-            if (FD_ISSET( sd , &readfds)) 
-            {
-                cout<<"thisloop"<<endl;
-                //Check if it was for closing , and also read the incoming message
-                if ((valread = read( sd , buffer1, 1024)) == 0)
-                {
-                    //Somebody disconnected , get his details and print
-                    getpeername(sd , (struct sockaddr*)&address , (socklen_t*)&addrlen);
-                    printf("Host disconnected , ip %s , port %d \n" , inet_ntoa(address.sin_addr) , ntohs(address.sin_port));
-                     
-                    //Close the socket and mark as 0 in list for reuse
-                    close( sd );
-                    client_socket[i] = 0;
-                }
-                
-                //Echo back the message that came in
-                else
-                {
-                    //set the string terminating NULL byte on the end of the data read
-                    
-                    cout<<buffer1;
-                    buffer1[valread] = '\0';
-                    //send(sd , buffer1 , strlen(buffer1) , 0 );
-                }
+            //for( int x = 0; x < max_sd; x++ )
+            //{
+            //    printf( "%d", FD_ISSET( x,&readfds ) );
+            //}
+            //printf( "\n" );
+            //FD_SET(sd,&readfds);
+            if(FD_ISSET(sd,&readfds)){
+                process1.push_back(thread(cust_recv,sd,readfds));   
             }
+            for (std::thread &t: process1) {
+            if (t.joinable()) {
+                t.join();
+                cout<<"finish"<<endl;
+            
         }
-
+        }    
         }
         
+
     }
 
     
