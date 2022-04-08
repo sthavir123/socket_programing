@@ -97,7 +97,7 @@ void cus_send(int new_socket,fd_set readfds,string mess){
             {
                 perror("send");
             }
-    puts("Welcome message sent successfully");
+    //puts("Welcome message sent successfully");
 }
 
 void cust_recv(int sd, fd_set readfds){
@@ -112,14 +112,14 @@ void cust_recv(int sd, fd_set readfds){
                 struct sockaddr_in address;
             //    cout<<"thisloop"<<endl;
                 //Check if it was for closing , and also read the incoming message
-                cout<<"reading";
+                //cout<<"reading";
                 valread = read( sd , buffer1, 1024);
-                cout<<"valread";
+                //cout<<"valread";
                 if (valread == 0)
                 {
                     //Somebody disconnected , get his details and print
                     getpeername(sd , (struct sockaddr*)&address , (socklen_t*)&addrlen);
-                    printf("Host disconnected , ip %s , port %d \n" , inet_ntoa(address.sin_addr) , ntohs(address.sin_port));
+                    //printf("Host disconnected , ip %s , port %d \n" , inet_ntoa(address.sin_addr) , ntohs(address.sin_port));
                      
                     //Close the socket and mark as 0 in list for reuse
                     close( sd );
@@ -129,10 +129,25 @@ void cust_recv(int sd, fd_set readfds){
                 //Echo back the message that came in
                 else
                 {
+                    //if(buffer1[0]=='\0')<<endl;
+
                     //set the string terminating NULL byte on the end of the data read
+                    if(buffer1[0]!='\0'){
+                    string s = buffer1;    
+                    std::string delimiter = ":";
+
+                    size_t pos = 0;
+                    std::string token;
+                    while ((pos = s.find(delimiter)) != std::string::npos) {
+                        token = s.substr(0, pos);
+                        std::cout << token <<" ";
+                        s.erase(0, pos + delimiter.length());
+                    }
+                        std::cout << s << std::endl;        
                     
-                    cout<<buffer1<<endl;
+                    
                     buffer1[valread] = '\0';
+                    }
                     //send(sd , mess.c_str() , mess.length() , 0 );
                 }
             }
@@ -258,7 +273,7 @@ int main(int argc, char* argv[]){
         exit(EXIT_FAILURE);
     }
     else{
-        printf("master socket doone");
+        //printf("master socket doone");
     } 
     sleep(1);
     //set master socket to allow multiple connections
@@ -275,7 +290,7 @@ int main(int argc, char* argv[]){
     if (bind(master_socket, (struct sockaddr *)&address, sizeof(address))<0) 
     {
         perror("bind failed");
-        printf("on port %d",C.in_port);
+        //printf("on port %d",C.in_port);
         exit(EXIT_FAILURE);
     }
     int on = 1;
@@ -285,7 +300,7 @@ int main(int argc, char* argv[]){
     
 
 
-    printf("Listener on port %d \n", C.in_port);
+    //printf("Listener on port %d \n", C.in_port);
 
     if (listen(master_socket, 5) < 0)
     {
@@ -295,7 +310,7 @@ int main(int argc, char* argv[]){
 
     //accept the incoming connection
     addrlen = sizeof(address);
-    puts("Waiting for connections ...");
+    //puts("Waiting for connections ...");
 
     if (ioctl(master_socket, FIONBIO, &on) < 0) {
                perror("ioctl F_SETFL, FNDELAY");
@@ -303,7 +318,7 @@ int main(int argc, char* argv[]){
           }
 
     
-    sleep(10);
+    sleep(2);
     
     //int MAXTRY = 10;
     vector<thread> process1;
@@ -334,14 +349,14 @@ int main(int argc, char* argv[]){
             
             if ( connect(client_in[tpi], (struct sockaddr *)&address1, sizeof(address1)) != 0 )
 	        {
-		        perror("Connect");
-
+		        //perror("Connect");
+                sleep(2);
                 //continue;
                 //if(errno != EINPROGRESS) exit(errno);
 	        }
             else{
-                printf("form %d",sd);
-                printf("request sent to %d\n", item.first);
+                //printf("form %d",sd);
+                //printf("request sent to %d\n", item.first);
                 C.connected[item.first] = true;
             }
             tpi++;
@@ -430,7 +445,7 @@ int main(int argc, char* argv[]){
                 exit(1);
             }
             //inform user of socket number - used in send and receive commands
-            printf("New connection , socket fd is %d , ip is : %s , port : %d \n" , new_socket , inet_ntoa(address.sin_addr) , ntohs(address.sin_port));
+            //printf("New connection , socket fd is %d , ip is : %s , port : %d \n" , new_socket , inet_ntoa(address.sin_addr) , ntohs(address.sin_port));
            
             //send new connection greeting message
             
@@ -446,14 +461,14 @@ int main(int argc, char* argv[]){
 				if( client_socket[i] == 0 )
                 {
                     client_socket[i] = new_socket;
-                    printf("Adding to list of sockets as %d\n" , i);
+                    //printf("Adding to list of sockets as %d\n" , i);
 					
                     break;
                 }
             }
 
            
-        cout<<"here";
+        //cout<<"here";
         }
         //else its some IO operation on some other socket :)
         for (i = 0; i < C.im_neighbours; i++) 
@@ -466,21 +481,16 @@ int main(int argc, char* argv[]){
                 perror("ioctl F_SETFL, FNDELAY");
                 exit(1);
             }
-            cout<<"thisone"<<FD_ISSET( sd , &readfds)<<endl;
+            //cout<<"thisone"<<FD_ISSET( sd , &readfds)<<endl;
             
-            //for( int x = 0; x < max_sd; x++ )
-            //{
-            //    printf( "%d", FD_ISSET( x,&readfds ) );
-            //}
-            //printf( "\n" );
-            //FD_SET(sd,&readfds);
+            
             if(FD_ISSET(sd,&readfds)){
                 process1.push_back(thread(cust_recv,sd,readfds));   
             }
             for (std::thread &t: process1) {
             if (t.joinable()) {
                 t.join();
-                cout<<"finish"<<endl;
+                //cout<<"finish"<<endl;
             
         }
         }    
