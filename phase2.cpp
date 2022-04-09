@@ -90,7 +90,7 @@ void cus_send(int new_socket,fd_set readfds,string mess){
     int on = 0;
     if (ioctl(new_socket, FIONBIO, &on) < 0) {
                perror("ioctl F_SETFL, FNDELAY");
-               exit(1);
+               //exit(1);
           }
 
     if( send(new_socket, mess.c_str(),mess.length(), 0) != mess.length() ) 
@@ -100,11 +100,11 @@ void cus_send(int new_socket,fd_set readfds,string mess){
     //puts("Welcome message sent successfully");
 }
 
-void cust_recv(int sd, fd_set readfds){
+void cust_recv(int sd, fd_set readfds, Client C){
     int on = 0;
     if (ioctl(sd, FIONBIO, &on) < 0) {
                perror("ioctl F_SETFL, FNDELAY");
-               exit(1);
+               //exit(1);
           }
     if (FD_ISSET( sd , &readfds)) 
             {
@@ -147,12 +147,62 @@ void cust_recv(int sd, fd_set readfds){
                     
                     
                     buffer1[valread] = '\0';
+                    string mess = to_string(C.client_id);
+                    
+                    for(auto item:C.myfiles){
+                        mess+=":"+item;
+                        }
+                    if( send(sd, mess.c_str(),mess.length(), 0) != mess.length() ) 
+                    {
+                        perror("send");
                     }
+                    else{
+                        cout<<mess<<endl;
+                    }
+                    }
+                    
+                    
                     //send(sd , mess.c_str() , mess.length() , 0 );
                 }
             }
 }
 
+void cust_recv2(int sd, fd_set readfds,Client C){
+    int on = 0;
+    if (ioctl(sd, FIONBIO, &on) < 0) {
+               perror("ioctl F_SETFL, FNDELAY");
+               //exit(1);
+          }
+    if(FD_ISSET(sd,&readfds)){
+        int valread,addrlen;
+        struct sockaddr_in address;
+        valread = read( sd , buffer2, 1024);
+        if(valread == 0){
+            close(sd);
+        }
+        else{
+            if(buffer2[0]!='\0'){
+                string s = buffer2;    
+                    std::string delimiter = ":";
+
+                    size_t pos = 0;
+                    std::string token;
+                    while ((pos = s.find(delimiter)) != std::string::npos) {
+                        token = s.substr(0, pos);
+                        //for(auto item: C.files){
+                        //    if(token == item){
+                        //        cout<<"found "<<token<<endl;
+                        //    }
+                        //}
+                        cout<<token<<" "; 
+                        s.erase(0, pos + delimiter.length());
+                    }
+                        std::cout << s << std::endl;
+                        buffer2[valread] = '\0';
+            }
+        }
+    }
+}
 
 int main(int argc, char* argv[]){
 // getting data   
@@ -178,7 +228,7 @@ int main(int argc, char* argv[]){
 
     if(!indata) { // file couldn't be opened
         cerr << "Error: configfile could not be opened" << endl;
-        exit(1);
+        //exit(1);
     }
     vector<string> lines;
     int no_lines = 0;
@@ -314,7 +364,7 @@ int main(int argc, char* argv[]){
 
     if (ioctl(master_socket, FIONBIO, &on) < 0) {
                perror("ioctl F_SETFL, FNDELAY");
-               exit(1);
+               //exit(1);
           }
 
     
@@ -385,7 +435,7 @@ int main(int argc, char* argv[]){
             int on =1;
             if (ioctl(sd, FIONBIO, &on) < 0) {
                 perror("ioctl F_SETFL, FNDELAY");
-                exit(1);
+                //exit(1);
             }       
             // if valid socket descriptor then add to read list
             if(sd>0){
@@ -414,7 +464,7 @@ int main(int argc, char* argv[]){
             int on =1;
             if (ioctl(sd, FIONBIO, &on) < 0) {
                 perror("ioctl F_SETFL, FNDELAY");
-                exit(1);
+                //exit(1);
             }
             //highest file descriptor number, need it for the select function
              
@@ -442,7 +492,7 @@ int main(int argc, char* argv[]){
             }
             if (ioctl(new_socket, FIONBIO, &on) < 0) {
                 perror("ioctl F_SETFL, FNDELAY");
-                exit(1);
+                //exit(1);
             }
             //inform user of socket number - used in send and receive commands
             //printf("New connection , socket fd is %d , ip is : %s , port : %d \n" , new_socket , inet_ntoa(address.sin_addr) , ntohs(address.sin_port));
@@ -479,22 +529,40 @@ int main(int argc, char* argv[]){
             if(!(sd>0)) continue;
             if (ioctl(sd, FIONBIO, &on) < 0) {
                 perror("ioctl F_SETFL, FNDELAY");
-                exit(1);
+                //exit(1);
             }
             //cout<<"thisone"<<FD_ISSET( sd , &readfds)<<endl;
             
             
             if(FD_ISSET(sd,&readfds)){
-                process1.push_back(thread(cust_recv,sd,readfds));   
+                process1.push_back(thread(cust_recv,sd,readfds,C));   
             }
-            for (std::thread &t: process1) {
+              
+        }
+
+        for(int i = 0; i < max_clients;i++){
+            sd = client_socket[i];
+            if(!(sd>0)) continue;
+            if (ioctl(sd, FIONBIO, &on) < 0) {
+                perror("ioctl F_SETFL, FNDELAY");
+                //exit(1);
+            }
+            if(FD_ISSET(sd,&readfds)){
+                process1.push_back(thread(cust_recv2,sd,readfds,C));   
+            }
+
+        }
+
+        for (std::thread &t: process1) {
             if (t.joinable()) {
                 t.join();
                 //cout<<"finish"<<endl;
             
         }
-        }    
-        }
+        }  
+
+        
+        
         
 
     }
