@@ -21,10 +21,6 @@ string loopback;
 char buffer1[MAXBUF];
 char buffer2[MAXBUF];
 
-int sendcount1;
-int recvcount1;
-int filesfound;
-int checked;
 
 class Client{
 private:
@@ -39,192 +35,9 @@ public:
     vector<string> files;
     vector<string> myfiles;
     map<int,bool> connected;
-    map<string,string> unique_id;
-    map<string,int> filelocation;
-    vector<pair<string,vector<int>>> fileloc2;
-
-    void cus_send(int new_socket,fd_set readfds,string mess){
-    int on = 0;
-    if (ioctl(new_socket, FIONBIO, &on) < 0) {
-               perror("ioctl F_SETFL, FNDELAY");
-               exit(1);
-          }
-
-    if( send(new_socket, mess.c_str(),mess.length(), 0) != mess.length() ) 
-            {
-                perror("send");
-            }
-    else{
-        sendcount1++;
-    }        
-    
-    }
-
-void cust_recv(int sd, fd_set readfds){
-    int on = 0;
-    if (ioctl(sd, FIONBIO, &on) < 0) {
-               perror("ioctl F_SETFL, FNDELAY");
-               exit(1);
-          }
-    if (FD_ISSET( sd , &readfds)) 
-            {
-                int valread,addrlen;
-                struct sockaddr_in address;
-            
-                valread = read( sd , buffer1, 1024);
-                
-                if (valread == 0)
-                {
-                    //Somebody disconnected , get his details and print
-                    getpeername(sd , (struct sockaddr*)&address , (socklen_t*)&addrlen);
-                    close( sd );
-                }
-                
-                //Echo back the message that came in
-                else
-                {
-                 //set the string terminating NULL byte on the end of the data read
-                    if(buffer1[0]!='\0'){
-
-                    char *token = strtok(buffer1, ":");
-                    string id = token;
-                    printf("connected to %s",token);
-                    token = strtok(NULL, ":");
-                    string u_id = token;
-                    printf(" with unique id %s",token);
-                    token = strtok(NULL, ":");
-                    printf(" on port %s\n",token);
-
-                    unique_id[id]=u_id;
-                    //cout<<id<<" "<<C->unique_id[id]<<endl;
-                    buffer1[0] = '\0';
-                    recvcount1++;
-
-                    
-                    }
-                    
-                }
-            }
-}
-
-void cust_send2(int sd,string mess){
-    //string mess = to_string(client_id);
-        //for(auto item:myfiles){
-            
-            //mess+=":"+item;
-        //}
-        if( send(sd, mess.c_str(),mess.length(), 0) != mess.length() ) 
-        {
-            perror("send");
-        }
-}
-
-void cust_recv2(int sd){
-    
-    int on = 0;
-    if (ioctl(sd, FIONBIO, &on) < 0) {
-               perror("ioctl F_SETFL, FNDELAY");
-               //exit(1);
-          }
-    
-        int valread,addrlen;
-        struct sockaddr_in address;
-        valread = read( sd , buffer2, 1024);
-        if(valread == 0){
-            close(sd);
-        }
-        else{
-            if(buffer2[0]!='\0'){
-                    
-
-                    std::istringstream iss(buffer2);
-                    std::string token;
-                    vector<string> temp;
-                    while (std::getline(iss, token, ':'))
-                    {
-                        temp.push_back(token);
-                    }    
-                    
-                    string recvid = temp[0];
-                    temp.erase(temp.begin());
-                    int un_id = stoi(unique_id[recvid]);
-                   
-                    for(auto token:temp){
-                        
-                        string file = token;
-                        
-                         for(auto item:files){
-                             if(file==item){
-                                 if(filelocation[file]==0){
-                                    filelocation[file] = un_id;
-                                    filesfound++;
-                                    
-                                 }
-                                 else if(filelocation[file] > un_id){
-                                     filelocation[file] = un_id;
-                                 }
-                             }
-
-                         }
-                    }
-                    //cout<<(token==NULL)<<endl;
-                    checked++;
-                buffer2[valread] = '\0';
-            }
-        }
-    
-}
-
 };
 
-fd_set setfd(int master_socket,Client* C,int& max_sd,int client_in[],int client_socket[]){
-    fd_set readfds;
-    FD_SET(master_socket, &readfds);
-        if(master_socket > max_sd){
-            max_sd  = master_socket;
-        }
-        
-        int sd;
-        for(int i = 0; i< C->im_neighbours; i++){
-            sd = client_in[i];
-            int on =1;
-            if (ioctl(sd, FIONBIO, &on) < 0) {
-                perror("ioctl F_SETFL, FNDELAY");
-                exit(1);
-            }       
-            // if valid socket descriptor then add to read list
-            if(sd>0){
-                FD_SET(sd, &readfds);
-                if(sd > max_sd)
-				{max_sd = sd;}
-            }
-            //highest file descriptor number, need it for the select function
-             
-        }
 
-
-        //add child sockets to set
-        for(int i = 0; i< C->im_neighbours; i++){
-            sd = client_socket[i];
-                   
-            // if valid socket descriptor then add to read list
-            if(sd>0){
-                FD_SET(sd, &readfds);
-                if(sd > max_sd){
-				    max_sd = sd;
-                }
-            }
-
-            int on =1;
-            if (ioctl(sd, FIONBIO, &on) < 0) {
-                perror("ioctl F_SETFL, FNDELAY");
-                exit(1);
-            }
-            //highest file descriptor number, need it for the select function
-             
-        }
-return readfds;
-}
 
 /** Returns true on success, or false if there was an error */
 bool SetSocketBlockingEnabled(int fd, bool blocking)
@@ -247,16 +60,137 @@ bool SetSocketBlockingEnabled(int fd, bool blocking)
 // {	
 //     string s = "127.0.0.1:"+comp;
 
+//     char Composite[s.length()];
+//     for(int i = 0;i<s.length();i++){
+//         Composite[i] = s[i];
+//     }
+//     cout<<Composite<<endl;
+//     int i;
+// 	char IPAddress[MAXIP];
+
+// 	bzero(Addr, sizeof(*Addr));
+// 	Addr->sin_family = AF_INET;
+// 	for ( i = 0; Composite[i] != ':'  &&  Composite[i] != 0  &&  i < MAXIP; i++ )
+// 		IPAddress[i] = Composite[i];
+// 	IPAddress[i] = 0;
+// 	if ( Composite[i] == ':' )
+// 		Addr->sin_port = htons(atoi(Composite+i+1));
+// 	else
+// 		Addr->sin_port = 0;
+// 	if ( *IPAddress == 0 )
+// 	{
+// 		Addr->sin_addr.s_addr = INADDR_ANY;
+// 		return 0;
+// 	}
+// 	else
+// 		return ( inet_aton(IPAddress, &Addr->sin_addr) == 0 );
+// }
+
+void cus_send(int new_socket,fd_set readfds,string mess){
+    int on = 0;
+    if (ioctl(new_socket, FIONBIO, &on) < 0) {
+               perror("ioctl F_SETFL, FNDELAY");
+               //exit(1);
+          }
+
+    if( send(new_socket, mess.c_str(),mess.length(), 0) != mess.length() ) 
+            {
+                perror("send");
+            }
+    //puts("Welcome message sent successfully");
+}
+
+void cust_recv(int sd, fd_set readfds, Client C){
+    int on = 0;
+    vector<string> fields;
+    if (ioctl(sd, FIONBIO, &on) < 0) {
+               perror("ioctl F_SETFL, FNDELAY");
+               //exit(1);
+          }
+    if (FD_ISSET( sd , &readfds)) 
+            {
+                int valread,addrlen;
+                struct sockaddr_in address;
+            //    cout<<"thisloop"<<endl;
+                //Check if it was for closing , and also read the incoming message
+                //cout<<"reading";
+                valread = read( sd , buffer1, 1024);
+                //cout<<"valread";
+                if (valread == 0)
+                {
+                    //Somebody disconnected , get his details and print
+                    getpeername(sd , (struct sockaddr*)&address , (socklen_t*)&addrlen);
+                    //printf("Host disconnected , ip %s , port %d \n" , inet_ntoa(address.sin_addr) , ntohs(address.sin_port));
+                     
+                    //Close the socket and mark as 0 in list for reuse
+                    close( sd );
+                    //client_socket[i] = 0;
+                }
+                
+                //Echo back the message that came in
+                else
+                {
+                    //if(buffer1[0]=='\0')<<endl;
+
+                    //set the string terminating NULL byte on the end of the data read
+                    if(buffer1[0]!='\0'){
+                    //string s = buffer1;    
+                    char *token = strtok(buffer1, ":");
+                    printf("connected to %s",token);
+                    token = strtok(NULL, ":");
+                    printf(" with unique id %s",token);
+                    token = strtok(NULL, ":");
+                    printf(" on port %s\n",token);
+                    
+                    buffer1[valread] = '\0';
+                    string mess = to_string(C.client_id);
+                    
+                    for(auto item:C.myfiles){
+                        mess+=":"+item;
+                        }
+                    if( send(sd, mess.c_str(),mess.length(), 0) != mess.length() ) 
+                    {
+                        perror("send");
+                    }
+                    else{
+                        cout<<mess<<endl;
+                    }
+                    }
+ 
+                }
+            }
+}
+
+void cust_recv2(int sd, fd_set readfds,Client C){
+    int on = 0;
+    if (ioctl(sd, FIONBIO, &on) < 0) {
+               perror("ioctl F_SETFL, FNDELAY");
+               //exit(1);
+          }
+    if(FD_ISSET(sd,&readfds)){
+        int valread,addrlen;
+        struct sockaddr_in address;
+        valread = read( sd , buffer2, 1024);
+        if(valread == 0){
+            close(sd);
+        }
+        else{
+            if(buffer2[0]!='\0'){
+                //string s = buffer2;    
+                    char delimiter;
+                    char *token = strtok(buffer1, ":");
+                    string recvid = token;
+                    while(token != NULL){
+                        
+                    }
+                    
+                    buffer2[valread] = '\0';
+            }
+        }
+    }
+}
 
 int main(int argc, char* argv[]){
-//initailisations
-sendcount1=0;
-recvcount1=0;
-filesfound=0;
-checked=0;
-
-
-
 // getting data   
     
     if(argc!=3){
@@ -267,14 +201,20 @@ checked=0;
     string config = argv[1]; 
     string dir_path = argv[2];
 
-    Client C; // our client
+    Client C; // our client 
+
+    // DATA From Config File
+    
+
+    // Directory contents
+    
 
     // Open Config file
     indata.open(config);
 
     if(!indata) { // file couldn't be opened
         cerr << "Error: configfile could not be opened" << endl;
-        exit(1);
+        //exit(1);
     }
     vector<string> lines;
     int no_lines = 0;
@@ -324,24 +264,19 @@ checked=0;
         }
         closedir(dr);
     }
-    else {cout<<"\nError Occurred!"<<endl;}
-    string mess1 = to_string(C.client_id);
-    for(auto item:C.myfiles){
-        mess1+=":" + item;
-    }
+    else
+        cout<<"\nError Occurred!"<<endl;
     
+
+
     // initialising all connected to false
     for(auto item:C.neighbours){
         C.connected[item.first] = false;
     }
+
     
-    //initialising filesloc 
-    vector<int>empty;
-    for(auto item:C.files){
-        C.fileloc2.push_back(make_pair(item,empty));
-    }
 
-
+    
     // Establishing Connections
     int opt = TRUE;
     int master_socket, addrlen, new_socket, 
@@ -373,8 +308,10 @@ checked=0;
         perror("socket failed");
         exit(EXIT_FAILURE);
     }
-    
-  
+    else{
+        //printf("master socket doone");
+    } 
+    sleep(1);
     //set master socket to allow multiple connections
     if(setsockopt(master_socket,SOL_SOCKET,SO_REUSEADDR,(char *)&opt, sizeof(opt))<0){
         perror("setsockopt");
@@ -389,7 +326,7 @@ checked=0;
     if (bind(master_socket, (struct sockaddr *)&address, sizeof(address))<0) 
     {
         perror("bind failed");
-        
+        //printf("on port %d",C.in_port);
         exit(EXIT_FAILURE);
     }
     int on = 1;
@@ -413,22 +350,22 @@ checked=0;
 
     if (ioctl(master_socket, FIONBIO, &on) < 0) {
                perror("ioctl F_SETFL, FNDELAY");
-               exit(1);
+               //exit(1);
           }
 
     
-   
+    sleep(2);
     
     //int MAXTRY = 10;
     vector<thread> process1;
     vector<thread> process2;
     while(true){
         //MAXTRY--;
-        //process1.clear();
+        process1.clear();
 
         //clear the socket set
         FD_ZERO(&readfds);
-        max_sd=0;
+
         int tpi=0;
         for(auto item:C.neighbours){
             if(C.connected[item.first]) {tpi++;continue;}
@@ -446,20 +383,81 @@ checked=0;
             }
             else{tpi++;continue;}
             
-            if ( connect(client_in[tpi], (struct sockaddr *)&address1, sizeof(address1)) != 0 ){
-             //do something   
-            }
+            if ( connect(client_in[tpi], (struct sockaddr *)&address1, sizeof(address1)) != 0 )
+	        {
+		        //perror("Connect");
+                sleep(2);
+                //continue;
+                //if(errno != EINPROGRESS) exit(errno);
+	        }
             else{
+                //printf("form %d",sd);
+                //printf("request sent to %d\n", item.first);
                 C.connected[item.first] = true;
             }
             tpi++;
 
         }
 
-        
+        for(int i = 0; i < C.im_neighbours; i++){
+            int sd = client_in[i];
+            if(sd>0){
+                FD_SET(sd, &readfds);
+                if(sd > max_sd){
+                    max_sd  = sd;
+                }
+            }
+        }
 
         //add master socket to set
-        readfds = setfd(master_socket,&C,max_sd,client_in,client_socket);
+        FD_SET(master_socket, &readfds);
+        if(master_socket > max_sd){
+            max_sd  = master_socket;
+        }
+        
+        
+        for(i = 0; i< C.im_neighbours; i++){
+            sd = client_in[i];
+            int on =1;
+            if (ioctl(sd, FIONBIO, &on) < 0) {
+                perror("ioctl F_SETFL, FNDELAY");
+                //exit(1);
+            }       
+            // if valid socket descriptor then add to read list
+            if(sd>0){
+                FD_SET(sd, &readfds);
+                if(sd > max_sd)
+				{max_sd = sd;}
+            }
+            //highest file descriptor number, need it for the select function
+             
+        }
+
+
+        //add child sockets to set
+        for(i = 0; i< max_clients; i++){
+            sd = client_socket[i];
+                   
+            // if valid socket descriptor then add to read list
+            if(sd>0){
+                //cout<<sd<<" "<<max_sd<<endl;
+                FD_SET(sd, &readfds);
+                if(sd > max_sd){
+				    max_sd = sd;
+                }
+            }
+
+            int on =1;
+            if (ioctl(sd, FIONBIO, &on) < 0) {
+                perror("ioctl F_SETFL, FNDELAY");
+                //exit(1);
+            }
+            //highest file descriptor number, need it for the select function
+             
+        }
+
+        
+        //cout<<"here1"<<endl;
         // wait for an activity with time out
         activity = select(max_sd+1,&readfds,NULL,NULL,NULL);
         //cout<<activity;
@@ -480,10 +478,18 @@ checked=0;
             }
             if (ioctl(new_socket, FIONBIO, &on) < 0) {
                 perror("ioctl F_SETFL, FNDELAY");
-                exit(1);
+                //exit(1);
             }
+            //inform user of socket number - used in send and receive commands
+            //printf("New connection , socket fd is %d , ip is : %s , port : %d \n" , new_socket , inet_ntoa(address.sin_addr) , ntohs(address.sin_port));
+           
+            //send new connection greeting message
             
-            process1.push_back(thread(&Client::cus_send,&C,new_socket,readfds,mess));
+            process1.push_back(thread(cus_send,new_socket,readfds,mess));
+            
+             
+            
+             
             //add new socket to array of sockets
             for (i = 0; i < max_clients; i++) 
             {
@@ -491,82 +497,57 @@ checked=0;
 				if( client_socket[i] == 0 )
                 {
                     client_socket[i] = new_socket;
-                    
+                    //printf("Adding to list of sockets as %d\n" , i);
+					
                     break;
                 }
             }
 
+           
+        //cout<<"here";
         }
         //else its some IO operation on some other socket :)
         for (i = 0; i < C.im_neighbours; i++) 
         {
             
             sd = client_in[i];
-            
+            //cout<<sd<<endl;
             if(!(sd>0)) continue;
             if (ioctl(sd, FIONBIO, &on) < 0) {
                 perror("ioctl F_SETFL, FNDELAY");
-                exit(1);
+                //exit(1);
             }
+            //cout<<"thisone"<<FD_ISSET( sd , &readfds)<<endl;
+            
             
             if(FD_ISSET(sd,&readfds)){
-                process1.push_back(thread(&Client::cust_recv,&C,sd,readfds));   
+                process1.push_back(thread(cust_recv,sd,readfds,C));   
             }
-                
+              
         }
-                                                      
-            
+
+        for(int i = 0; i < max_clients;i++){
+            sd = client_socket[i];
+            if(!(sd>0)) continue;
+            if (ioctl(sd, FIONBIO, &on) < 0) {
+                perror("ioctl F_SETFL, FNDELAY");
+                //exit(1);
+            }
+            if(FD_ISSET(sd,&readfds)){
+                process1.push_back(thread(cust_recv2,sd,readfds,C));   
+            }
+
+        }
+
         for (std::thread &t: process1) {
             if (t.joinable()) {
                 t.join();
-                
+                //cout<<"finish"<<endl;
+            
         }
-        }
-        //Found bar.pdf at 4526 with MD5 0 at depth 1
-        if(sendcount1 == C.im_neighbours && recvcount1 == C.im_neighbours){
-            sleep(5);
-            break;
-        }
-        sleep(1);
-    }
-//phase 2
-    //FD_ZERO(&readfds);
-    //readfds = setfd(master_socket,&C,max_sd,client_in,client_socket);
-        // wait for an activity with time out
-    //    activity = select(max_sd+1,&readfds,NULL,NULL,NULL);
-        //cout<<activity;
-    //    if ((activity < 0) && (errno!=EINTR)) 
-    //    {
-    //        printf("select error");
-    //        return 0;
-    //    }
+        }  
 
-    
-    for(int i =0 ;i < C.im_neighbours;i++){
-         sd = client_socket[i];
-         process1.push_back(thread(&Client::cust_send2,&C,sd,mess1));
-    }
-     for(int i =0 ;i < C.im_neighbours;i++){
-         sd = client_in[i];
-         process1.push_back(thread(&Client::cust_recv2,&C,sd));
-     }
-
-     for (std::thread &t: process1) {
-             if (t.joinable()) {
-                 t.join();
-                
-     }
-     }
-     //Found bar.pdf at 4526 with MD5 0 at depth 1
-     for(auto item : C.filelocation){
-         if(item.second != 0){
-             cout<<"Found "<<item.first<<" at "<<item.second<<" with MD5 0 at depth 1"<<endl;
-         }
-         else{
-             cout<<"Found "<<item.first<<" at "<<item.second<<" with MD5 0 at depth 0"<<endl;
-         }
-        
-     }
-    //sleep(5);
+}
+  
     return 0; 
 }

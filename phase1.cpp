@@ -118,7 +118,8 @@ void cust_recv(int sd, fd_set readfds){
                     printf(" on port %s\n",token);       
                     
                     
-                    buffer1[valread] = '\0';
+                    buffer1[0] = '\0';
+                    //cout<<buffer1<<endl;
                     recvcount1++;
                     }
                     
