@@ -102,6 +102,7 @@ void cus_send(int new_socket,fd_set readfds,string mess){
 
 void cust_recv(int sd, fd_set readfds, Client C){
     int on = 0;
+    vector<string> fields;
     if (ioctl(sd, FIONBIO, &on) < 0) {
                perror("ioctl F_SETFL, FNDELAY");
                //exit(1);
@@ -133,18 +134,13 @@ void cust_recv(int sd, fd_set readfds, Client C){
 
                     //set the string terminating NULL byte on the end of the data read
                     if(buffer1[0]!='\0'){
-                    string s = buffer1;    
-                    std::string delimiter = ":";
-
-                    size_t pos = 0;
-                    std::string token;
-                    while ((pos = s.find(delimiter)) != std::string::npos) {
-                        token = s.substr(0, pos);
-                        std::cout << token <<" ";
-                        s.erase(0, pos + delimiter.length());
-                    }
-                        std::cout << s << std::endl;        
-                    
+                    //string s = buffer1;    
+                    char *token = strtok(buffer1, ":");
+                    printf("connected to %s",token);
+                    token = strtok(NULL, ":");
+                    printf(" with unique id %s",token);
+                    token = strtok(NULL, ":");
+                    printf(" on port %s\n",token);
                     
                     buffer1[valread] = '\0';
                     string mess = to_string(C.client_id);
@@ -160,9 +156,7 @@ void cust_recv(int sd, fd_set readfds, Client C){
                         cout<<mess<<endl;
                     }
                     }
-                    
-                    
-                    //send(sd , mess.c_str() , mess.length() , 0 );
+ 
                 }
             }
 }
@@ -189,11 +183,7 @@ void cust_recv2(int sd, fd_set readfds,Client C){
                     std::string token;
                     while ((pos = s.find(delimiter)) != std::string::npos) {
                         token = s.substr(0, pos);
-                        //for(auto item: C.files){
-                        //    if(token == item){
-                        //        cout<<"found "<<token<<endl;
-                        //    }
-                        //}
+                        
                         cout<<token<<" "; 
                         s.erase(0, pos + delimiter.length());
                     }
@@ -561,15 +551,7 @@ int main(int argc, char* argv[]){
         }
         }  
 
-        
-        
-        
-
-    }
-
-    
-    
-    
-    
+}
+  
     return 0; 
 }
