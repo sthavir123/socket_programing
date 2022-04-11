@@ -378,8 +378,6 @@ recvcount1=0;
              
         }
 
-        
-        //cout<<"here1"<<endl;
         // wait for an activity with time out
         activity = select(max_sd+1,&readfds,NULL,NULL,NULL);
         //cout<<activity;
