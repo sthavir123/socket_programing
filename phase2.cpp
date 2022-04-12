@@ -10,7 +10,8 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
-#include<thread>
+#include <thread>
+#include <mutex>
 #define CLIENT_MAX  10000
 #define MAXBUF		1024
 #define MAXIP		16
@@ -25,7 +26,7 @@ int sendcount1;
 int recvcount1;
 int filesfound;
 int checked;
-
+int connectedto;
 class Client{
 private:
     vector<string> downloads;
@@ -56,6 +57,7 @@ public:
             }
     else{
         sendcount1++;
+        //cout<<"sent "<<mess<<endl;
     }        
     
     }
@@ -85,7 +87,7 @@ void cust_recv(int sd, fd_set readfds){
                 {
                  //set the string terminating NULL byte on the end of the data read
                     if(buffer1[0]!='\0'){
-
+                    //cout<<buffer1<<endl;        
                     char *token = strtok(buffer1, ":");
                     string id = token;
                     printf("connected to %s",token);
@@ -97,7 +99,7 @@ void cust_recv(int sd, fd_set readfds){
 
                     unique_id[id]=u_id;
                     //cout<<id<<" "<<C->unique_id[id]<<endl;
-                    buffer1[0] = '\0';
+                    for(int i=0;i<1024;i++){buffer1[i] = '\0';}
                     recvcount1++;
 
                     
@@ -135,7 +137,7 @@ void cust_recv2(int sd){
         }
         else{
             if(buffer2[0]!='\0'){
-                    
+                    cout<<buffer2<<endl;
 
                     std::istringstream iss(buffer2);
                     std::string token;
@@ -143,9 +145,13 @@ void cust_recv2(int sd){
                     while (std::getline(iss, token, ':'))
                     {
                         temp.push_back(token);
+                    }
+                    if(temp[0]=="phase1"){
+                        cout<<"Connected to "<< temp[1]<<" with unique id "<<temp[2]<<" on port "<<temp[3]<<endl;
+                        unique_id[temp[1]]=temp[2];    
                     }    
-                    
-                    string recvid = temp[0];
+                    else if(temp[0]=="phase2"){
+                    string recvid = temp[1];
                     temp.erase(temp.begin());
                     int un_id = stoi(unique_id[recvid]);
                    
@@ -169,7 +175,8 @@ void cust_recv2(int sd){
                     }
                     //cout<<(token==NULL)<<endl;
                     checked++;
-                buffer2[valread] = '\0';
+                    for(int i=0;i<1024;i++){buffer2[i] = '\0';}
+            } 
             }
         }
     
@@ -254,8 +261,8 @@ sendcount1=0;
 recvcount1=0;
 filesfound=0;
 checked=0;
-
-
+connectedto=0;
+int connected_form=0;
 
 // getting data   
     
@@ -325,10 +332,11 @@ checked=0;
         closedir(dr);
     }
     else {cout<<"\nError Occurred!"<<endl;}
-    string mess1 = to_string(C.client_id);
+    string mess1 = "phase2:"+to_string(C.client_id);
     for(auto item:C.myfiles){
         mess1+=":" + item;
     }
+    
     
     // initialising all connected to false
     for(auto item:C.neighbours){
@@ -336,9 +344,10 @@ checked=0;
     }
     
     //initialising filesloc 
-    vector<int>empty;
+    //vector<int>empty;
     for(auto item:C.files){
-        C.fileloc2.push_back(make_pair(item,empty));
+        //C.fileloc2.push_back(make_pair(item,empty));
+        C.filelocation[item]=0;
     }
 
 
@@ -359,14 +368,17 @@ checked=0;
     timeout.tv_usec = 0;   
   
     //info string
-    string mess = to_string(C.client_id) +":" +to_string(C.unique_private_id)+ ":" + to_string(C.in_port);    
-
+    string mess = "phase1:"+to_string(C.client_id) +":" +to_string(C.unique_private_id)+ ":" + to_string(C.in_port)+":";
     // initialise client_socket to 0
     for(i = 0; i<max_clients; i++){
         client_socket[i]=0;
     }
     for(int i = 0; i < C.im_neighbours;i++){
         client_in[i]=0;
+    }
+
+    for(auto item: C.files){
+
     }
     //create master socket
     if((master_socket  = socket(AF_INET,SOCK_STREAM,0)) == 0){
@@ -422,6 +434,7 @@ checked=0;
     //int MAXTRY = 10;
     vector<thread> process1;
     vector<thread> process2;
+    sleep(5);
     while(true){
         //MAXTRY--;
         //process1.clear();
@@ -451,6 +464,7 @@ checked=0;
             }
             else{
                 C.connected[item.first] = true;
+                connectedto++;
             }
             tpi++;
 
@@ -459,7 +473,63 @@ checked=0;
         
 
         //add master socket to set
-        readfds = setfd(master_socket,&C,max_sd,client_in,client_socket);
+        //readfds = setfd(master_socket,&C,max_sd,client_in,client_socket);
+        // for(int i = 0; i < C.im_neighbours; i++){
+        //     int sd = client_in[i];
+        //     if(sd>0){
+        //         FD_SET(sd, &readfds);
+        //         if(sd > max_sd){
+        //             max_sd  = sd;
+        //         }
+        //     }
+        // }
+
+        //add master socket to set
+        FD_SET(master_socket, &readfds);
+        if(master_socket > max_sd){
+            max_sd  = master_socket;
+        }
+        
+        
+        // for(i = 0; i< C.im_neighbours; i++){
+        //     sd = client_in[i];
+        //     int on =1;
+        //     if (ioctl(sd, FIONBIO, &on) < 0) {
+        //         perror("ioctl F_SETFL, FNDELAY");
+        //         //exit(1);
+        //     }       
+        //     // if valid socket descriptor then add to read list
+        //     if(sd>0){
+        //         FD_SET(sd, &readfds);
+        //         if(sd > max_sd)
+		// 		{max_sd = sd;}
+        //     }
+        //     //highest file descriptor number, need it for the select function
+             
+        // }
+
+
+        //add child sockets to set
+        //for(i = 0; i< max_clients; i++){
+        //    sd = client_socket[i];
+                   
+            // if valid socket descriptor then add to read list
+        //    if(sd>0){
+                //cout<<sd<<" "<<max_sd<<endl;
+        //        FD_SET(sd, &readfds);
+        //        if(sd > max_sd){
+		//		    max_sd = sd;
+        //        }
+        //    }
+
+        //    int on =1;
+        //    if (ioctl(sd, FIONBIO, &on) < 0) {
+        //        perror("ioctl F_SETFL, FNDELAY");
+                //exit(1);
+        //    }
+            //highest file descriptor number, need it for the select function
+             
+        //}
         // wait for an activity with time out
         activity = select(max_sd+1,&readfds,NULL,NULL,NULL);
         //cout<<activity;
@@ -483,7 +553,7 @@ checked=0;
                 exit(1);
             }
             
-            process1.push_back(thread(&Client::cus_send,&C,new_socket,readfds,mess));
+            C.cus_send(new_socket,readfds,mess);
             //add new socket to array of sockets
             for (i = 0; i < max_clients; i++) 
             {
@@ -491,43 +561,49 @@ checked=0;
 				if( client_socket[i] == 0 )
                 {
                     client_socket[i] = new_socket;
-                    
+                    connected_form++;
                     break;
                 }
             }
 
         }
         //else its some IO operation on some other socket :)
-        for (i = 0; i < C.im_neighbours; i++) 
-        {
+        //for (i = 0; i < C.im_neighbours; i++) 
+        //{
+        //    
+        //    sd = client_in[i];
             
-            sd = client_in[i];
+        //    if(!(sd>0)) continue;
+        //  if (ioctl(sd, FIONBIO, &on) < 0) {
+        //        perror("ioctl F_SETFL, FNDELAY");
+        //        exit(1);
+        //    }
             
-            if(!(sd>0)) continue;
-            if (ioctl(sd, FIONBIO, &on) < 0) {
-                perror("ioctl F_SETFL, FNDELAY");
-                exit(1);
-            }
-            
-            if(FD_ISSET(sd,&readfds)){
-                process1.push_back(thread(&Client::cust_recv,&C,sd,readfds));   
-            }
+        //    if(FD_ISSET(sd,&readfds)){
+                //process1.push_back(thread(&Client::cust_recv,&C,sd,readfds));   
+        //    }
                 
-        }
+        //}
                                                       
             
-        for (std::thread &t: process1) {
-            if (t.joinable()) {
-                t.join();
+        // for (std::thread &t: process1) {
+        //     if (t.joinable()) {
+        //         t.join();
                 
-        }
-        }
+        // }
+        // }
         //Found bar.pdf at 4526 with MD5 0 at depth 1
-        if(sendcount1 == C.im_neighbours && recvcount1 == C.im_neighbours){
+        if(connectedto == C.im_neighbours&&connected_form==C.im_neighbours){
             sleep(5);
             break;
         }
         sleep(1);
+    }
+
+//phase1 messages
+    for(int i = 0;i<C.im_neighbours;i++){
+        sd = client_in[i];
+        C.cust_recv2(sd);
     }
 //phase 2
     //FD_ZERO(&readfds);
@@ -543,30 +619,42 @@ checked=0;
 
     
     for(int i =0 ;i < C.im_neighbours;i++){
-         sd = client_socket[i];
-         process1.push_back(thread(&Client::cust_send2,&C,sd,mess1));
+        sd = client_socket[i];
+        //process1.push_back(thread(&Client::cust_send2,&C,sd,mess1));
+        C.cust_send2(sd,mess1);
     }
-     for(int i =0 ;i < C.im_neighbours;i++){
-         sd = client_in[i];
-         process1.push_back(thread(&Client::cust_recv2,&C,sd));
-     }
+    for(int i =0 ;i < C.im_neighbours;i++){
+        sd = client_in[i];
+        //process1.push_back(thread(&Client::cust_recv2,&C,sd));
+        C.cust_recv2(sd);
+    }
 
-     for (std::thread &t: process1) {
-             if (t.joinable()) {
-                 t.join();
-                
-     }
-     }
-     //Found bar.pdf at 4526 with MD5 0 at depth 1
-     for(auto item : C.filelocation){
-         if(item.second != 0){
-             cout<<"Found "<<item.first<<" at "<<item.second<<" with MD5 0 at depth 1"<<endl;
-         }
-         else{
-             cout<<"Found "<<item.first<<" at "<<item.second<<" with MD5 0 at depth 0"<<endl;
-         }
+    //for (std::thread &t: process1) {
+    //        if (t.joinable()) {
+    //            t.join();
+    //            
+    //    }
+    //    }
+    //Found bar.pdf at 4526 with MD5 0 at depth 1
+    
+    for(auto it = C.filelocation.begin();it!=C.filelocation.end();it++){
         
-     }
-    //sleep(5);
+        int depth;
+        if((*it).second == 0){
+            depth=0;
+            //cout<<"Found "<<item.first<<" at "<<item.second<<" with MD5 0 at depth 0"<<endl;
+        }
+        else{
+            depth=1;
+        }
+        
+        //cout<<"Found "<<item.first;
+        printf("Found %s",(*it).first.c_str());
+        printf(" at %d with MD5 0 at depth %d\n",(*it).second,depth);
+        //cout<<"Found "<<item.first<<" at "<<item.second<<" with MD5 0 at depth "<<depth<<endl;
+        
+        
+    }
+    sleep(5);
     return 0; 
 }
