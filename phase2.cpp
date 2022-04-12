@@ -594,7 +594,7 @@ int connected_form=0;
         // }
         //Found bar.pdf at 4526 with MD5 0 at depth 1
         if(connectedto == C.im_neighbours&&connected_form==C.im_neighbours){
-            sleep(5);
+            sleep(1);
             break;
         }
         sleep(1);
@@ -605,6 +605,8 @@ int connected_form=0;
         sd = client_in[i];
         C.cust_recv2(sd);
     }
+    sleep(5);
+
 //phase 2
     //FD_ZERO(&readfds);
     //readfds = setfd(master_socket,&C,max_sd,client_in,client_socket);
@@ -655,6 +657,6 @@ int connected_form=0;
         
         
     }
-    sleep(5);
+    sleep(2);
     return 0; 
 }
