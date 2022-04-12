@@ -157,7 +157,9 @@ void cust_recv2(int sd){
                     for(auto token:temp){
                         
                         string file = token;
-                        
+                        if (!file.empty() && file[file.size() - 1] == '\r')
+                    {file.erase(temp.size() - 1);}
+
                          for(auto item:files){
                              if(file==item){
                                  if(filelocation[file]==0){
@@ -325,7 +327,12 @@ int connected_form=0;
         {
             if(d->d_type == DT_REG ||d->d_type == DT_UNKNOWN ){
                 cout<<d->d_name<<endl;
-                C.myfiles.push_back(string(d->d_name));
+                string temp = d->d_name;
+                if (!temp.empty() && temp[temp.size() - 1] == '\r')
+                    {temp.erase(temp.size() - 1);}
+
+
+                C.myfiles.push_back(temp);
             }
         }
         closedir(dr);
@@ -648,9 +655,14 @@ int connected_form=0;
         else{
             depth=1;
         }
-        
+        string temp = (*it).first;
+        if (!temp.empty() && temp[temp.size() - 1] == '\r')
+                    {temp.erase(temp.size() - 1);}
+        //if(temp[temp.size()-1]=='\r'){
+        //    cout<<"ut has"<<endl;
+        //}
         //cout<<"Found "<<item.first;
-        printf("Found %s",(*it).first.c_str());
+        printf(temp.c_str());
         printf(" at %d with MD5 0 at depth %d\n",(*it).second,depth);
         //cout<<"Found "<<item.first<<" at "<<item.second<<" with MD5 0 at depth "<<depth<<endl;
         

@@ -649,9 +649,11 @@ int connected_form=0;
         else{
             depth=1;
         }
-        
+        string temp = (*it).first;
+        if (!temp.empty() && temp[temp.size() - 1] == '\r')
+                    {temp.erase(temp.size() - 1);}
         //cout<<"Found "<<item.first;
-        printf("Found %s",(*it).first.c_str());
+        printf("Found %s",temp.c_str());
         printf(" at %d with MD5 0 at depth %d\n",(*it).second,depth);
         //cout<<"Found "<<item.first<<" at "<<item.second<<" with MD5 0 at depth "<<depth<<endl;
         
