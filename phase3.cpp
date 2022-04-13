@@ -13,7 +13,7 @@
 #include <thread>
 #include <mutex>
 #include <openssl/md5.h>
-
+#include <sys/sendfile.h>
 unsigned char result[MD5_DIGEST_LENGTH];
 
 #define CLIENT_MAX  10000
@@ -31,6 +31,15 @@ int recvcount1;
 int filesfound;
 int checked;
 int connectedto;
+
+long int getfileSize(string filepath){
+    ifstream in_file(filepath, ios::binary);
+    in_file.seekg(0, ios::end);
+    long int file_size = in_file.tellg();
+    return file_size;
+}
+
+
 class Client{
 private:
     vector<string> downloads;
@@ -46,7 +55,8 @@ public:
     map<int,bool> connected;
     map<string,string> unique_id;
     map<string,int> filelocation;
-    vector<pair<string,vector<int>>> fileloc2;
+    map<string,int> filesendto;
+    map<string,int> socketmap1;
 
     void cus_send(int new_socket,fd_set readfds,string mess){
     int on = 0;
@@ -66,52 +76,6 @@ public:
     
     }
 
-void cust_recv(int sd, fd_set readfds){
-    int on = 0;
-    if (ioctl(sd, FIONBIO, &on) < 0) {
-               perror("ioctl F_SETFL, FNDELAY");
-               exit(1);
-          }
-    if (FD_ISSET( sd , &readfds)) 
-            {
-                int valread,addrlen;
-                struct sockaddr_in address;
-            
-                valread = read( sd , buffer1, 1024);
-                
-                if (valread == 0)
-                {
-                    //Somebody disconnected , get his details and print
-                    getpeername(sd , (struct sockaddr*)&address , (socklen_t*)&addrlen);
-                    close( sd );
-                }
-                
-                //Echo back the message that came in
-                else
-                {
-                 //set the string terminating NULL byte on the end of the data read
-                    if(buffer1[0]!='\0'){
-                    //cout<<buffer1<<endl;        
-                    char *token = strtok(buffer1, ":");
-                    string id = token;
-                    printf("connected to %s",token);
-                    token = strtok(NULL, ":");
-                    string u_id = token;
-                    printf(" with unique id %s",token);
-                    token = strtok(NULL, ":");
-                    printf(" on port %s\n",token);
-
-                    unique_id[id]=u_id;
-                    //cout<<id<<" "<<C->unique_id[id]<<endl;
-                    for(int i=0;i<1024;i++){buffer1[i] = '\0';}
-                    recvcount1++;
-
-                    
-                    }
-                    
-                }
-            }
-}
 
 void cust_send2(int sd,string mess){
     
@@ -136,7 +100,7 @@ void cust_recv2(int sd){
         }
         else{
             if(buffer2[0]!='\0'){
-                    cout<<buffer2<<endl;
+                    //cout<<buffer2<<endl;
 
                     std::istringstream iss(buffer2);
                     std::string token;
@@ -147,7 +111,8 @@ void cust_recv2(int sd){
                     }
                     if(temp[0]=="phase1"){
                         cout<<"Connected to "<< temp[1]<<" with unique id "<<temp[2]<<" on port "<<temp[3]<<endl;
-                        unique_id[temp[1]]=temp[2];    
+                        unique_id[temp[1]]=temp[2];
+                        socketmap1[temp[2]]=sd;    
                     }    
                     else if(temp[0]=="phase2"){
                     string recvid = temp[1];
@@ -181,6 +146,44 @@ void cust_recv2(int sd){
             }
         }
     
+}
+
+void download_file(int sd,string filepath,int fz){
+    int n = fz;
+    ofstream download;
+    download.open(filepath,ios::trunc|ios::out);
+    char buf[1024];
+    while(n>0){
+        int val_read = recv(sd,buf,1024,0);
+        download.write(buf,val_read);
+        n = n- val_read;
+    }
+    download.close();
+}
+
+void upload_file(int sd,string filepath,int fz){
+    int file_fd = open(filepath.c_str(),0);
+    if(file_fd==-1) cout<<"error opening filee at "<<filepath<<endl;
+    //int send = sendfile(sd,file_fd,0,fz);
+}
+
+
+
+int send_file(int sd){
+    int byte = recv(sd,buffer1,1024,0);
+    
+    if(byte>0){
+        std::istringstream iss(buffer2);
+                    std::string token;
+                    vector<string> temp;
+                    while (std::getline(iss, token, ':'))
+                    {
+                        temp.push_back(token);
+                    }
+        if(temp[0] == "phase3"){
+            string file = temp[2];
+        }
+    }
 }
 
 };
@@ -352,7 +355,7 @@ int connected_form=0;
     //initialising filesloc 
     //vector<int>empty;
     for(auto item:C.files){
-        //C.fileloc2.push_back(make_pair(item,empty));
+        
         C.filelocation[item]=0;
     }
 
@@ -412,13 +415,6 @@ int connected_form=0;
     }
     int on = 1;
     
-
-    
-    
-
-
-    //printf("Listener on port %d \n", C.in_port);
-
     if (listen(master_socket, 5) < 0)
     {
         perror("listen");
@@ -435,16 +431,11 @@ int connected_form=0;
           }
 
     
-   
-    
-    //int MAXTRY = 10;
     vector<thread> process1;
     vector<thread> process2;
-    sleep(5);
+    sleep(2);
     while(true){
-        //MAXTRY--;
-        //process1.clear();
-
+        
         //clear the socket set
         FD_ZERO(&readfds);
         max_sd=0;
@@ -476,20 +467,6 @@ int connected_form=0;
 
         }
 
-        
-
-        //add master socket to set
-        //readfds = setfd(master_socket,&C,max_sd,client_in,client_socket);
-        // for(int i = 0; i < C.im_neighbours; i++){
-        //     int sd = client_in[i];
-        //     if(sd>0){
-        //         FD_SET(sd, &readfds);
-        //         if(sd > max_sd){
-        //             max_sd  = sd;
-        //         }
-        //     }
-        // }
-
         //add master socket to set
         FD_SET(master_socket, &readfds);
         if(master_socket > max_sd){
@@ -497,45 +474,6 @@ int connected_form=0;
         }
         
         
-        // for(i = 0; i< C.im_neighbours; i++){
-        //     sd = client_in[i];
-        //     int on =1;
-        //     if (ioctl(sd, FIONBIO, &on) < 0) {
-        //         perror("ioctl F_SETFL, FNDELAY");
-        //         //exit(1);
-        //     }       
-        //     // if valid socket descriptor then add to read list
-        //     if(sd>0){
-        //         FD_SET(sd, &readfds);
-        //         if(sd > max_sd)
-		// 		{max_sd = sd;}
-        //     }
-        //     //highest file descriptor number, need it for the select function
-             
-        // }
-
-
-        //add child sockets to set
-        //for(i = 0; i< max_clients; i++){
-        //    sd = client_socket[i];
-                   
-            // if valid socket descriptor then add to read list
-        //    if(sd>0){
-                //cout<<sd<<" "<<max_sd<<endl;
-        //        FD_SET(sd, &readfds);
-        //        if(sd > max_sd){
-		//		    max_sd = sd;
-        //        }
-        //    }
-
-        //    int on =1;
-        //    if (ioctl(sd, FIONBIO, &on) < 0) {
-        //        perror("ioctl F_SETFL, FNDELAY");
-                //exit(1);
-        //    }
-            //highest file descriptor number, need it for the select function
-             
-        //}
         // wait for an activity with time out
         activity = select(max_sd+1,&readfds,NULL,NULL,NULL);
         //cout<<activity;
@@ -573,32 +511,7 @@ int connected_form=0;
             }
 
         }
-        //else its some IO operation on some other socket :)
-        //for (i = 0; i < C.im_neighbours; i++) 
-        //{
-        //    
-        //    sd = client_in[i];
-            
-        //    if(!(sd>0)) continue;
-        //  if (ioctl(sd, FIONBIO, &on) < 0) {
-        //        perror("ioctl F_SETFL, FNDELAY");
-        //        exit(1);
-        //    }
-            
-        //    if(FD_ISSET(sd,&readfds)){
-                //process1.push_back(thread(&Client::cust_recv,&C,sd,readfds));   
-        //    }
-                
-        //}
-                                                      
-            
-        // for (std::thread &t: process1) {
-        //     if (t.joinable()) {
-        //         t.join();
-                
-        // }
-        // }
-        //Found bar.pdf at 4526 with MD5 0 at depth 1
+        
         if(connectedto == C.im_neighbours&&connected_form==C.im_neighbours){
             sleep(1);
             break;
@@ -614,61 +527,46 @@ int connected_form=0;
     sleep(5);
 
 //phase 2
-    //FD_ZERO(&readfds);
-    //readfds = setfd(master_socket,&C,max_sd,client_in,client_socket);
-        // wait for an activity with time out
-    //    activity = select(max_sd+1,&readfds,NULL,NULL,NULL);
-        //cout<<activity;
-    //    if ((activity < 0) && (errno!=EINTR)) 
-    //    {
-    //        printf("select error");
-    //        return 0;
-    //    }
-
     
     for(int i =0 ;i < C.im_neighbours;i++){
         sd = client_socket[i];
-        //process1.push_back(thread(&Client::cust_send2,&C,sd,mess1));
         C.cust_send2(sd,mess1);
     }
     for(int i =0 ;i < C.im_neighbours;i++){
         sd = client_in[i];
-        //process1.push_back(thread(&Client::cust_recv2,&C,sd));
-        C.cust_recv2(sd);
+       C.cust_recv2(sd);
     }
 
-    //for (std::thread &t: process1) {
-    //        if (t.joinable()) {
-    //            t.join();
-    //            
-    //    }
-    //    }
-    //Found bar.pdf at 4526 with MD5 0 at depth 1
     
     for(auto it = C.filelocation.begin();it!=C.filelocation.end();it++){
         
         int depth;
         if((*it).second == 0){
             depth=0;
-            //cout<<"Found "<<item.first<<" at "<<item.second<<" with MD5 0 at depth 0"<<endl;
         }
         else{
             depth=1;
         }
         string temp = (*it).first;
+        // dealing with /r in the code
         if (!temp.empty() && temp[temp.size() - 1] == '\r')
                     {temp.erase(temp.size() - 1);}
-        //if(temp[temp.size()-1]=='\r'){
-        //    cout<<"ut has"<<endl;
-        //}
-        //cout<<"Found "<<item.first;
+       
         printf(temp.c_str());
         printf(" at %d with MD5 0 at depth %d\n",(*it).second,depth);
-        //cout<<"Found "<<item.first<<" at "<<item.second<<" with MD5 0 at depth "<<depth<<endl;
+        
         
         
     }
     sleep(2);
-    
+    //phase3
+    //send message along the unique ids in filelocations asking the file
+    //recv message having the lenght of the file
+    //invoke download function
+
+    //recieve request on for file
+    //send filesize
+    //invoke upload_file
+
     return 0; 
 }
