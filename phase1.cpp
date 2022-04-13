@@ -193,7 +193,7 @@ recvcount1=0;
         for(d=readdir(dr); d!=NULL; d=readdir(dr))
         {
             if(d->d_type == DT_REG ||d->d_type == DT_UNKNOWN ){
-                cout<<d->d_name<<endl;
+                //cout<<d->d_name<<endl;
                 C.myfiles.push_back(string(d->d_name));
             }
         }
@@ -202,7 +202,10 @@ recvcount1=0;
     else
         cout<<"\nError Occurred!"<<endl;
     
-
+    sort(C.myfiles.begin(),C.myfiles.end());
+    for(auto item: C.myfiles){
+        cout<<item<<endl;
+    }
 
     // initialising all connected to false
     for(auto item:C.neighbours){

@@ -43,7 +43,7 @@ public:
     map<string,string> unique_id;
     map<string,int> filelocation;
     vector<pair<string,vector<int>>> fileloc2;
-
+    map<int,bool>recieved_all;
     void cus_send(int new_socket,fd_set readfds,string mess){
     int on = 0;
     if (ioctl(new_socket, FIONBIO, &on) < 0) {
@@ -62,18 +62,14 @@ public:
     
     }
 
-void cust_recv(int sd, fd_set readfds){
-    int on = 0;
-    if (ioctl(sd, FIONBIO, &on) < 0) {
-               perror("ioctl F_SETFL, FNDELAY");
-               exit(1);
-          }
-    if (FD_ISSET( sd , &readfds)) 
-            {
+void cust_recv(int sd){
+    
+     
+            
                 int valread,addrlen;
                 struct sockaddr_in address;
             
-                valread = read( sd , buffer1, 1024);
+                valread = read( sd , buffer2, 1024);
                 
                 if (valread == 0)
                 {
@@ -83,30 +79,38 @@ void cust_recv(int sd, fd_set readfds){
                 }
                 
                 //Echo back the message that came in
-                else
-                {
-                 //set the string terminating NULL byte on the end of the data read
-                    if(buffer1[0]!='\0'){
-                    //cout<<buffer1<<endl;        
-                    char *token = strtok(buffer1, ":");
-                    string id = token;
-                    printf("connected to %s",token);
-                    token = strtok(NULL, ":");
-                    string u_id = token;
-                    printf(" with unique id %s",token);
-                    token = strtok(NULL, ":");
-                    printf(" on port %s\n",token);
+                
+        else{
+            if(buffer2[0]!='\0'){
+                    //cout<<buffer2<<endl;
 
-                    unique_id[id]=u_id;
-                    //cout<<id<<" "<<C->unique_id[id]<<endl;
-                    for(int i=0;i<1024;i++){buffer1[i] = '\0';}
-                    recvcount1++;
+                    std::istringstream iss(buffer2);
+                    std::string token;
+                    vector<string> temp;
+                    vector<string> temp2;
+                    while (std::getline(iss, token, ';'))
+                    {
+                        temp2.push_back(token);
+                    }
+                    
+                    std::istringstream iss1(temp2[0]);
+                        
+                    while (std::getline(iss1, token, ':'))
+                    {
+                        temp.push_back(token);
+                    }
+                    
+                    if(temp[0]=="phase1"){
+                        cout<<"Connected to "<< temp[1]<<" with unique id "<<temp[2]<<" on port "<<temp[3]<<endl;
+                        unique_id[temp[1]]=temp[2];    
+                    }
 
                     
                     }
+                    for(int i=0;i<1024;i++){buffer2[i] = '\0';}
                     
                 }
-            }
+            
 }
 
 void cust_send2(int sd,string mess){
@@ -135,49 +139,77 @@ void cust_recv2(int sd){
         if(valread == 0){
             close(sd);
         }
-        else{
-            if(buffer2[0]!='\0'){
-                    cout<<buffer2<<endl;
+        else if(buffer2[0]!='\0'){
+                    //cout<<buffer2<<endl;
 
                     std::istringstream iss(buffer2);
                     std::string token;
-                    vector<string> temp;
-                    while (std::getline(iss, token, ':'))
+                    
+                    
+                    vector<string> temp2;
+                    while (std::getline(iss, token, ';'))
+                    {
+                        token.erase( std::remove(token.begin(), token.end(), '\r'), token.end() );
+                        temp2.push_back(token);
+                    }
+                    
+                    for(auto item:temp2){
+                    std::istringstream iss1(temp2[0]);
+                    vector<string> temp;    
+                    while (std::getline(iss1, token, ':'))
                     {
                         temp.push_back(token);
                     }
-                    if(temp[0]=="phase1"){
-                        cout<<"Connected to "<< temp[1]<<" with unique id "<<temp[2]<<" on port "<<temp[3]<<endl;
-                        unique_id[temp[1]]=temp[2];    
-                    }    
-                    else if(temp[0]=="phase2"){
-                    string recvid = temp[1];
-                    temp.erase(temp.begin());
-                    int un_id = stoi(unique_id[recvid]);
-                   
-                    for(auto token:temp){
+                    
+                    if(temp[0]=="phase2"){
                         
-                        string file = token;
-                        
-                         for(auto item:files){
-                             if(file==item){
-                                 if(filelocation[file]==0){
-                                    filelocation[file] = un_id;
-                                    filesfound++;
-                                    
-                                 }
-                                 else if(filelocation[file] > un_id){
-                                     filelocation[file] = un_id;
-                                 }
-                             }
+                        string mess = "phase2.1:"+to_string(client_id);
+                            for(auto token:temp){
+                                string file = token;
+                                for(auto item:myfiles){
+                                    if(file==item){
+                                        mess+=":"+item;
+                                    }
+                                }
+                            }
+                            mess+=";";
+                            //cout<<"mess sent "<<mess<<endl;
+                            cust_send2(sd,mess);
+                        }
+                        else if(temp[0]=="phase2.1"){
+                            string recvid = temp[1];
+                            temp.erase(temp.begin());
+                            temp.erase(temp.begin());
+                            //cout<< recvid<<endl;
+                            int un_id = stoi(unique_id[recvid]);
 
-                         }
+                            for(auto token:temp){
+                        
+                                string file = token;
+                        
+                                for(auto item:files){
+                                    if(file==item){
+                                        if(filelocation[file]==0){
+                                            filelocation[file] = un_id;
+                                            filesfound++;
+                                    
+                                        }
+                                        else if(filelocation[file] > un_id){
+                                            filelocation[file] = un_id;
+                                        }
+                                    }
+                                }
+                            }
+                            recieved_all[sd]=true;    
+                        }
                     }
+                    //cout<<temp2.size()<<endl;
+                    
                     //cout<<(token==NULL)<<endl;
                     checked++;
                     for(int i=0;i<1024;i++){buffer2[i] = '\0';}
-            } 
-            }
+             
+            
         }
     
 }
@@ -233,28 +265,6 @@ fd_set setfd(int master_socket,Client* C,int& max_sd,int client_in[],int client_
 return readfds;
 }
 
-/** Returns true on success, or false if there was an error */
-bool SetSocketBlockingEnabled(int fd, bool blocking)
-{
-   if (fd < 0) return false;
-
-#ifdef _WIN32
-   unsigned long mode = blocking ? 0 : 1;
-   return (ioctlsocket(fd, FIONBIO, &mode) == 0) ? true : false;
-#else
-   int flags = fcntl(fd, F_GETFL, 0);
-   if (flags == -1) return false;
-   flags = blocking ? (flags & ~O_NONBLOCK) : (flags | O_NONBLOCK);
-   return (fcntl(fd, F_SETFL, flags) == 0) ? true : false;
-#endif
-}
-
-
-// int SetAddress(string comp, struct sockaddr_in *Addr)
-// {	
-//     string s = "127.0.0.1:"+comp;
-
-
 int main(int argc, char* argv[]){
 //initailisations
 sendcount1=0;
@@ -290,6 +300,7 @@ int connected_form=0;
     if (indata.is_open()){   //checking whether the file is open
         string tp;
         while(getline(indata, tp)){ //read data from file object and put it into string.
+            
             lines.push_back(tp); // store line;
             no_lines++;
         }
@@ -325,18 +336,28 @@ int connected_form=0;
         for(d=readdir(dr); d!=NULL; d=readdir(dr))
         {
             if(d->d_type == DT_REG ||d->d_type == DT_UNKNOWN ){
-                cout<<d->d_name<<endl;
-                C.myfiles.push_back(string(d->d_name));
+                //cout<<d->d_name<<endl;
+                string temp = d->d_name;
+                if (!temp.empty() && temp[temp.size() - 1] == '\r')
+                    {temp.erase(temp.size() - 1);}
+
+
+                C.myfiles.push_back(temp);
             }
         }
         closedir(dr);
     }
     else {cout<<"\nError Occurred!"<<endl;}
-    string mess1 = "phase2:"+to_string(C.client_id);
-    for(auto item:C.myfiles){
-        mess1+=":" + item;
+    sort(C.myfiles.begin(),C.myfiles.end());
+    for(auto item: C.myfiles){
+        cout<<item<<endl;
     }
     
+    string mess1 = "phase2:"+to_string(C.client_id);
+    for(auto item:C.files){
+        mess1+=":" + item;
+    }
+    mess1+=";";
     
     // initialising all connected to false
     for(auto item:C.neighbours){
@@ -346,8 +367,11 @@ int connected_form=0;
     //initialising filesloc 
     //vector<int>empty;
     for(auto item:C.files){
+        string temp= item;
+        if (!temp.empty() && temp[temp.size() - 1] == '\r')
+                    {temp.erase(temp.size() - 1);}
         //C.fileloc2.push_back(make_pair(item,empty));
-        C.filelocation[item]=0;
+        C.filelocation[temp]=0;
     }
 
 
@@ -368,7 +392,7 @@ int connected_form=0;
     timeout.tv_usec = 0;   
   
     //info string
-    string mess = "phase1:"+to_string(C.client_id) +":" +to_string(C.unique_private_id)+ ":" + to_string(C.in_port)+":";
+    string mess = "phase1:"+to_string(C.client_id) +":" +to_string(C.unique_private_id)+ ":" + to_string(C.in_port);
     // initialise client_socket to 0
     for(i = 0; i<max_clients; i++){
         client_socket[i]=0;
@@ -377,9 +401,7 @@ int connected_form=0;
         client_in[i]=0;
     }
 
-    for(auto item: C.files){
-
-    }
+    
     //create master socket
     if((master_socket  = socket(AF_INET,SOCK_STREAM,0)) == 0){
         perror("socket failed");
@@ -406,11 +428,6 @@ int connected_form=0;
     }
     int on = 1;
     
-
-    
-    
-
-
     //printf("Listener on port %d \n", C.in_port);
 
     if (listen(master_socket, 5) < 0)
@@ -470,66 +487,14 @@ int connected_form=0;
 
         }
 
-        
-
-        //add master socket to set
-        //readfds = setfd(master_socket,&C,max_sd,client_in,client_socket);
-        // for(int i = 0; i < C.im_neighbours; i++){
-        //     int sd = client_in[i];
-        //     if(sd>0){
-        //         FD_SET(sd, &readfds);
-        //         if(sd > max_sd){
-        //             max_sd  = sd;
-        //         }
-        //     }
-        // }
 
         //add master socket to set
         FD_SET(master_socket, &readfds);
         if(master_socket > max_sd){
             max_sd  = master_socket;
         }
-        
-        
-        // for(i = 0; i< C.im_neighbours; i++){
-        //     sd = client_in[i];
-        //     int on =1;
-        //     if (ioctl(sd, FIONBIO, &on) < 0) {
-        //         perror("ioctl F_SETFL, FNDELAY");
-        //         //exit(1);
-        //     }       
-        //     // if valid socket descriptor then add to read list
-        //     if(sd>0){
-        //         FD_SET(sd, &readfds);
-        //         if(sd > max_sd)
-		// 		{max_sd = sd;}
-        //     }
-        //     //highest file descriptor number, need it for the select function
-             
-        // }
-
-
-        //add child sockets to set
-        //for(i = 0; i< max_clients; i++){
-        //    sd = client_socket[i];
-                   
-            // if valid socket descriptor then add to read list
-        //    if(sd>0){
-                //cout<<sd<<" "<<max_sd<<endl;
-        //        FD_SET(sd, &readfds);
-        //        if(sd > max_sd){
-		//		    max_sd = sd;
-        //        }
-        //    }
-
-        //    int on =1;
-        //    if (ioctl(sd, FIONBIO, &on) < 0) {
-        //        perror("ioctl F_SETFL, FNDELAY");
-                //exit(1);
-        //    }
-            //highest file descriptor number, need it for the select function
-             
-        //}
+       
+       
         // wait for an activity with time out
         activity = select(max_sd+1,&readfds,NULL,NULL,NULL);
         //cout<<activity;
@@ -603,7 +568,7 @@ int connected_form=0;
 //phase1 messages
     for(int i = 0;i<C.im_neighbours;i++){
         sd = client_in[i];
-        C.cust_recv2(sd);
+        C.cust_recv(sd);
     }
     sleep(5);
 
@@ -625,19 +590,29 @@ int connected_form=0;
         //process1.push_back(thread(&Client::cust_send2,&C,sd,mess1));
         C.cust_send2(sd,mess1);
     }
+    for(int i = 0;i<C.im_neighbours;i++){
+        C.recieved_all[sd]=0;
+    }
     for(int i =0 ;i < C.im_neighbours;i++){
         sd = client_in[i];
         //process1.push_back(thread(&Client::cust_recv2,&C,sd));
         C.cust_recv2(sd);
     }
-
+    for(int i = 0; i < C.im_neighbours;i++){
+        sd = client_socket[i];
+        //if(!C.recieved_all[sd]){
+            //cout<<"recieved2"<<endl;
+            C.cust_recv2(sd);
+            
+        //}
+     }
     //for (std::thread &t: process1) {
     //        if (t.joinable()) {
     //            t.join();
     //            
     //    }
     //    }
-    //Found bar.pdf at 4526 with MD5 0 at depth 1
+    // //Found bar.pdf at 4526 with MD5 0 at depth 1
     
     for(auto it = C.filelocation.begin();it!=C.filelocation.end();it++){
         
@@ -659,6 +634,6 @@ int connected_form=0;
         
         
     }
-    sleep(2);
+    sleep(3);
     return 0; 
 }
