@@ -162,7 +162,9 @@ void cust_recv2(int sd){
                     }
                     
                     if(temp[0]=="phase2"){
-                        
+                        temp.erase(temp.begin());
+                        temp.erase(temp.begin());
+                        //cout<<temp[1]<<endl;
                         string mess = "phase2.1:"+to_string(client_id);
                             for(auto token:temp){
                                 string file = token;
