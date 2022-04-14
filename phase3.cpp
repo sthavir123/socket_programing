@@ -13,6 +13,10 @@
 #include <thread>
 #include <mutex>
 #include<sys/sendfile.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <openssl/md5.h>
+
 #define CLIENT_MAX  10000
 #define MAXBUF		1024
 #define MAXIP		16
@@ -29,6 +33,43 @@ int filesfound;
 int checked;
 int connectedto;
 string dir_path;
+
+unsigned char result[MD5_DIGEST_LENGTH];
+
+// Print the MD5 sum as hex-digits.
+void print_md5_sum(unsigned char* md) {
+    int i;
+    for(i=0; i <MD5_DIGEST_LENGTH; i++) {
+            printf("%02x",md[i]);
+    }
+}
+
+// Get the size of the file by its file descriptor
+unsigned long get_size_by_fd(int fd) {
+    struct stat statbuf;
+    if(fstat(fd, &statbuf) < 0) exit(-1);
+    return statbuf.st_size;
+}
+
+void get_md5(string filepath){
+    int file_descript;
+    unsigned long file_size;
+    char* file_buffer;
+
+    file_descript = open(filepath.c_str(), O_RDONLY);
+    if(file_descript < 0) exit(-1);
+
+    file_size = get_size_by_fd(file_descript);
+    printf("file size:\t%lu\n", file_size);
+
+    file_buffer = static_cast<char*>( mmap(0, file_size, PROT_READ, MAP_SHARED, file_descript, 0));
+    MD5((unsigned char*) file_buffer, file_size, result);
+    munmap(file_buffer, file_size); 
+
+    print_md5_sum(result);
+    printf("  %s\n", filepath);
+
+}
 
 long int getfileSize(string filepath){
     ifstream in_file(filepath, ios::binary);

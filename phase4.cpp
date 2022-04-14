@@ -12,9 +12,10 @@
 #include <sys/ioctl.h>
 #include <thread>
 #include <mutex>
+#include<sys/sendfile.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
 #include <openssl/md5.h>
-#include <sys/sendfile.h>
-unsigned char result[MD5_DIGEST_LENGTH];
 
 #define CLIENT_MAX  10000
 #define MAXBUF		1024
@@ -31,6 +32,46 @@ int recvcount1;
 int filesfound;
 int checked;
 int connectedto;
+string dir_path;
+
+
+unsigned char result[MD5_DIGEST_LENGTH];
+
+// Print the MD5 sum as hex-digits.
+void print_md5_sum(unsigned char* md) {
+    int i;
+    for(i=0; i <MD5_DIGEST_LENGTH; i++) {
+            printf("%02x",md[i]);
+    }
+}
+
+// Get the size of the file by its file descriptor
+unsigned long get_size_by_fd(int fd) {
+    struct stat statbuf;
+    if(fstat(fd, &statbuf) < 0) exit(-1);
+    return statbuf.st_size;
+}
+
+void get_md5(string filepath){
+    int file_descript;
+    unsigned long file_size;
+    char* file_buffer;
+
+    file_descript = open(filepath.c_str(), O_RDONLY);
+    if(file_descript < 0) exit(-1);
+
+    file_size = get_size_by_fd(file_descript);
+    printf("file size:\t%lu\n", file_size);
+
+    file_buffer = static_cast<char*>( mmap(0, file_size, PROT_READ, MAP_SHARED, file_descript, 0));
+    MD5((unsigned char*) file_buffer, file_size, result);
+    munmap(file_buffer, file_size); 
+
+    print_md5_sum(result);
+    printf("  %s\n", filepath);
+
+}
+
 
 long int getfileSize(string filepath){
     ifstream in_file(filepath, ios::binary);
@@ -38,7 +79,6 @@ long int getfileSize(string filepath){
     long int file_size = in_file.tellg();
     return file_size;
 }
-
 
 class Client{
 private:
@@ -55,50 +95,90 @@ public:
     map<int,bool> connected;
     map<string,string> unique_id;
     map<string,int> filelocation;
-    map<string,int> filesendto;
+    
     map<string,int> socketmap1;
-    map<string,int> sendtouid;
-    map<string,int> recvfromuid;
+    map<string,int> socketmap2;
+    map<int,bool>recieved_all;
+    map<string ,int> sendto;
+    vector<tuple<string,string,int>> tothis;
+    vector<tuple<string,string,int>> fromthis;
+
     void cus_send(int new_socket,fd_set readfds,string mess){
     int on = 0;
     if (ioctl(new_socket, FIONBIO, &on) < 0) {
                perror("ioctl F_SETFL, FNDELAY");
                exit(1);
           }
-
+    
     if( send(new_socket, mess.c_str(),mess.length(), 0) != mess.length() ) 
             {
                 perror("send");
             }
     else{
         sendcount1++;
-        //cout<<"sent "<<mess<<endl;
+        
     }        
     
     }
 
 
-void cust_send2(int sd,string mess){
-    
-        if( send(sd, mess.c_str(),mess.length(), 0) != mess.length() ) 
-        {
-            perror("send");
-        }
-}
 
-void cust_recv2(int sd){
-    
-    int on = 0;
-    if (ioctl(sd, FIONBIO, &on) < 0) {
-               perror("ioctl F_SETFL, FNDELAY");
+
+
+void download_file(int sd,string filepath,int fz){
+    int n  = fz;
+    ofstream download;
+    download.open(filepath,ios::trunc|ios::out);
+    char buffer[1024];
+    while(n>0){
+        int val_read = read(sd,buffer,1024);
+        download.write(buffer,val_read);
+        n = n - val_read;
+    }
+    download.close();
+    string mess="phase3.3;";
+    if(send(sd,mess.c_str(),mess.length(),0)<0){
+        perror("send");
     }
     
-        int valread,addrlen;
-        struct sockaddr_in address;
-        valread = read( sd , buffer2, 1024);
-        if(valread == 0){
-            close(sd);
-        }
+}
+
+void upload_file(int sd,string filepath,int fz){
+    char buffer[1024];
+    int file_fd = open(filepath.c_str(),0);
+    if(file_fd==-1) cout<<"ERR...Opening file at: "<<filepath<<endl;
+    int sent = sendfile(sd,file_fd,0,fz);
+    if(sent<0){
+        perror("sent");
+    }
+    else{
+        cout<<"sent bytes "<<sent<<endl;
+    }
+    int valread  = read(sd,buffer,1024);
+    if(valread<0){
+        perror("read");
+    }
+    else{
+        cout<<buffer<<endl;
+    }
+}
+
+void cust_recv(int sd){
+    
+                int valread,addrlen;
+                struct sockaddr_in address;
+            
+                valread = read( sd , buffer2, 1024);
+                
+                if (valread == 0)
+                {
+                    //Somebody disconnected , get his details and print
+                    getpeername(sd , (struct sockaddr*)&address , (socklen_t*)&addrlen);
+                    close( sd );
+                }
+                
+                //Echo back the message that came in
+                
         else{
             if(buffer2[0]!='\0'){
                     //cout<<buffer2<<endl;
@@ -106,126 +186,164 @@ void cust_recv2(int sd){
                     std::istringstream iss(buffer2);
                     std::string token;
                     vector<string> temp;
-                    while (std::getline(iss, token, ':'))
+                    vector<string> temp2;
+                    while (std::getline(iss, token, ';'))
+                    {
+                        temp2.push_back(token);
+                    }
+                    
+                    std::istringstream iss1(temp2[0]);
+                        
+                    while (std::getline(iss1, token, ':'))
                     {
                         temp.push_back(token);
                     }
+                    
                     if(temp[0]=="phase1"){
                         cout<<"Connected to "<< temp[1]<<" with unique id "<<temp[2]<<" on port "<<temp[3]<<endl;
                         unique_id[temp[1]]=temp[2];
-                        socketmap1[temp[2]]=sd;    
-                    }    
-                    else if(temp[0]=="phase2"){
-                    string recvid = temp[1];
-                    temp.erase(temp.begin());
-                    int un_id = stoi(unique_id[recvid]);
-                   
-                    for(auto token:temp){
-                        
-                        string file = token;
-                        if (!file.empty() && file[file.size() - 1] == '\r')
-                    {file.erase(temp.size() - 1);}
-
-                         for(auto item:files){
-                             if(file==item){
-                                 if(filelocation[file]==0){
-                                    filelocation[file] = un_id;
-                                    filesfound++;
-                                    
-                                 }
-                                 else if(filelocation[file] > un_id){
-                                     filelocation[file] = un_id;
-                                 }
-                             }
-
-                         }
+                        //cout<<"sockmap1HERE"<<sd<<endl;
+                        socketmap1[temp[2]] = sd;   
                     }
-                    //cout<<(token==NULL)<<endl;
-                    checked++;
+
+                    
+                    }
                     for(int i=0;i<1024;i++){buffer2[i] = '\0';}
-            } 
-            }
-        }
-    
+                    
+                }
+            
 }
 
-void cust_recv3(int sd){
-    char buf[1024];
-    int bytes = recv(sd,buf,1024,0);
-    if(bytes>0){
-        std::istringstream iss(buf);
-        std::string token;
-        vector<string> temp;
-        while (std::getline(iss, token, ';'))
+void cust_send2(int sd,string mess){
+    
+        if( send(sd, mess.c_str(),mess.length(), 0) != mess.length() ) 
         {
-            temp.push_back(token);
+            perror("send");
         }
        
-            
-            std::istringstream iss(temp[0]);
-            std::string token;
-            vector<string> temp2;
-            while (std::getline(iss, token, ':'))
-            {
-                temp2.push_back(token);
-            }
-            temp2[0]="phase4.1";
-            
-            string mess4 = temp2[0];
-            for(auto it = temp2.begin()+1;it!=temp2.end();it++){
-                mess4+=":"+*it;
-            }
-            for(auto item: socketmap1){
-                if(item.first!=temp2[1]){
-                    cust_send2(item.second,mess4);
-                }
-            }
-        
-        if(temp[1].size()>1){
 
-        }
-
-    }
 }
 
-
-void download_file(int sd,string filepath,int fz){
-    int n = fz;
-    ofstream download;
-    download.open(filepath,ios::trunc|ios::out);
-    char buf[1024];
-    while(n>0){
-        int val_read = recv(sd,buf,1024,0);
-        download.write(buf,val_read);
-        n = n- val_read;
-    }
-    download.close();
-}
-
-void upload_file(int sd,string filepath,int fz){
-    int file_fd = open(filepath.c_str(),0);
-    if(file_fd==-1) cout<<"error opening filee at "<<filepath<<endl;
-    //int send = sendfile(sd,file_fd,0,fz);
-}
-
-
-
-int send_file(int sd){
-    int byte = recv(sd,buffer1,1024,0);
+void cust_recv2(int sd){
     
-    if(byte>0){
-        std::istringstream iss(buffer2);
+    int on = 0;
+    if (ioctl(sd, FIONBIO, &on) < 0) {
+               perror("ioctl F_SETFL, FNDELAY");
+               //exit(1);
+          }
+    
+        int valread,addrlen;
+        struct sockaddr_in address;
+        valread = read( sd , buffer2, 1024);
+        if(valread == 0){
+            close(sd);
+        }
+        else if(buffer2[0]!='\0'){
+                    //cout<<buffer2<<endl;
+
+                    std::istringstream iss(buffer2);
                     std::string token;
-                    vector<string> temp;
-                    while (std::getline(iss, token, ':'))
+                    
+                    
+                    vector<string> temp2;
+                    while (std::getline(iss, token, ';'))
+                    {
+                        token.erase( std::remove(token.begin(), token.end(), '\r'), token.end() );
+                        temp2.push_back(token);
+                    }
+                    
+                    for(auto item:temp2){
+                    std::istringstream iss1(temp2[0]);
+                    vector<string> temp;    
+                    while (std::getline(iss1, token, ':'))
                     {
                         temp.push_back(token);
                     }
-        if(temp[0] == "phase3"){
-            string file = temp[2];
+                    
+                    if(temp[0]=="phase2"){
+                        
+                        temp.erase(temp.begin());
+                        
+                        temp.erase(temp.begin());
+                        string mess = "phase2.1:"+to_string(client_id);
+                            for(auto token:temp){
+                                string file = token;
+                                for(auto item:myfiles){
+                                    if(file==item){
+                                        mess+=":"+item;
+                                    }
+                                }
+                            }
+                            mess+=";";
+
+                            
+                            cust_send2(sd,mess);
+                        }
+                        else if(temp[0]=="phase2.1"){
+                            //cout<<"socketmap2HERE"<<sd<<endl;
+                            socketmap2[unique_id[temp[1]]] = sd;
+                            string recvid = temp[1];
+                            temp.erase(temp.begin());
+                            temp.erase(temp.begin());
+                            //cout<< recvid<<endl;
+                            int un_id = stoi(unique_id[recvid]);
+
+                            for(auto token:temp){
+                        
+                                string file = token;
+                        
+                                for(auto item:files){
+                                    if(file==item){
+                                        if(filelocation[file]==0){
+                                            filelocation[file] = un_id;
+                                            filesfound++;
+                                    
+                                        }
+                                        else if(filelocation[file] > un_id){
+                                            filelocation[file] = un_id;
+                                        }
+                                    }
+                                }
+                            }
+                            recieved_all[sd]=true;    
+                        }
+                        else if(temp[0]=="phase3"){
+                            //cout<<"recv"<<endl;
+                            if(temp[1]=="0"){
+                                string mess="phase3.1:0;";
+                                //cout<<mess<<endl;
+                                cust_send2(sd,mess);
+                            }
+                            else{
+                                string filepath = dir_path+temp[2];
+                                int size = getfileSize(filepath);
+                                string mess = "phase3.1:"+to_string(unique_private_id)+":"+ temp[2]+":"+to_string(size)+";";
+                                //cout<<mess<<endl;
+                                cust_send2(sd,mess);
+                                //sleep(2);
+                                tothis.push_back(make_tuple(temp[1],filepath,size));
+                                //upload_file(socketmap1[temp[1]],dir_path,size);
+                            }        
+                        }
+                        else if(temp[0]=="phase3.1"){
+                            
+                            if(temp[1]!="0"){
+
+                                //cout<<socketmap2[temp[1]]<<" "<<socketmap1[temp[1]]<<endl;
+                                string file_path = dir_path+"Downloads/"+temp[2];
+                                cout<<file_path<<endl;
+                                fromthis.push_back(make_tuple(temp[1],file_path,stoi(temp[3])));
+                                
+                            }
+                        }
+                    }
+                   
+                    checked++;
+                    for(int i=0;i<1024;i++){buffer2[i] = '\0';}
+             
+            
         }
-    }
-    return byte;
+    
 }
 
 };
@@ -279,28 +397,6 @@ fd_set setfd(int master_socket,Client* C,int& max_sd,int client_in[],int client_
 return readfds;
 }
 
-/** Returns true on success, or false if there was an error */
-bool SetSocketBlockingEnabled(int fd, bool blocking)
-{
-   if (fd < 0) return false;
-
-#ifdef _WIN32
-   unsigned long mode = blocking ? 0 : 1;
-   return (ioctlsocket(fd, FIONBIO, &mode) == 0) ? true : false;
-#else
-   int flags = fcntl(fd, F_GETFL, 0);
-   if (flags == -1) return false;
-   flags = blocking ? (flags & ~O_NONBLOCK) : (flags | O_NONBLOCK);
-   return (fcntl(fd, F_SETFL, flags) == 0) ? true : false;
-#endif
-}
-
-
-// int SetAddress(string comp, struct sockaddr_in *Addr)
-// {	
-//     string s = "127.0.0.1:"+comp;
-
-
 int main(int argc, char* argv[]){
 //initailisations
 sendcount1=0;
@@ -318,8 +414,8 @@ int connected_form=0;
     }
     ifstream indata;
     string config = argv[1]; 
-    string dir_path = argv[2];
-
+    dir_path = argv[2];
+    
     Client C; // our client
 
     // Open Config file
@@ -336,6 +432,7 @@ int connected_form=0;
     if (indata.is_open()){   //checking whether the file is open
         string tp;
         while(getline(indata, tp)){ //read data from file object and put it into string.
+            
             lines.push_back(tp); // store line;
             no_lines++;
         }
@@ -387,23 +484,23 @@ int connected_form=0;
     for(auto item: C.myfiles){
         cout<<item<<endl;
     }
+    
     string mess1 = "phase2:"+to_string(C.client_id);
-    for(auto item:C.myfiles){
+    for(auto item:C.files){
         mess1+=":" + item;
     }
-    
+    mess1+=";";
     
     // initialising all connected to false
     for(auto item:C.neighbours){
         C.connected[item.first] = false;
     }
     
-    //initialising filesloc 
-    //vector<int>empty;
     for(auto item:C.files){
-        string temp = item;
+        string temp= item;
         if (!temp.empty() && temp[temp.size() - 1] == '\r')
                     {temp.erase(temp.size() - 1);}
+        
         C.filelocation[temp]=0;
     }
 
@@ -425,7 +522,7 @@ int connected_form=0;
     timeout.tv_usec = 0;   
   
     //info string
-    string mess = "phase1:"+to_string(C.client_id) +":" +to_string(C.unique_private_id)+ ":" + to_string(C.in_port)+":";
+    string mess = "phase1:"+to_string(C.client_id) +":" +to_string(C.unique_private_id)+ ":" + to_string(C.in_port);
     // initialise client_socket to 0
     for(i = 0; i<max_clients; i++){
         client_socket[i]=0;
@@ -461,6 +558,7 @@ int connected_form=0;
     }
     int on = 1;
     
+
     if (listen(master_socket, 5) < 0)
     {
         perror("listen");
@@ -476,7 +574,7 @@ int connected_form=0;
                exit(1);
           }
 
-    
+   
     vector<thread> process1;
     vector<thread> process2;
     sleep(2);
@@ -513,13 +611,14 @@ int connected_form=0;
 
         }
 
+
         //add master socket to set
         FD_SET(master_socket, &readfds);
         if(master_socket > max_sd){
             max_sd  = master_socket;
         }
-        
-        
+       
+       
         // wait for an activity with time out
         activity = select(max_sd+1,&readfds,NULL,NULL,NULL);
         //cout<<activity;
@@ -528,7 +627,7 @@ int connected_form=0;
             printf("select error");
             break;
         }
-        //cout<<"here2"<<endl;
+        
 
 
         if (FD_ISSET(master_socket, &readfds)) 
@@ -557,7 +656,7 @@ int connected_form=0;
             }
 
         }
-        
+
         if(connectedto == C.im_neighbours&&connected_form==C.im_neighbours){
             sleep(1);
             break;
@@ -568,21 +667,34 @@ int connected_form=0;
 //phase1 messages
     for(int i = 0;i<C.im_neighbours;i++){
         sd = client_in[i];
-        C.cust_recv2(sd);
+        C.cust_recv(sd);
     }
-    sleep(5);
+    sleep(2);
 
 //phase 2
     
     for(int i =0 ;i < C.im_neighbours;i++){
         sd = client_socket[i];
+        //process1.push_back(thread(&Client::cust_send2,&C,sd,mess1));
         C.cust_send2(sd,mess1);
+    }
+    for(int i = 0;i<C.im_neighbours;i++){
+        C.recieved_all[sd]=0;
     }
     for(int i =0 ;i < C.im_neighbours;i++){
         sd = client_in[i];
-       C.cust_recv2(sd);
+        //process1.push_back(thread(&Client::cust_recv2,&C,sd));
+        C.cust_recv2(sd);
     }
-
+    //phase2.1
+    for(int i = 0; i < C.im_neighbours;i++){
+        sd = client_socket[i];
+        //if(!C.recieved_all[sd]){
+            //cout<<"recieved2"<<endl;
+            C.cust_recv2(sd);
+            
+        //}
+     }
     
     for(auto it = C.filelocation.begin();it!=C.filelocation.end();it++){
         
@@ -594,52 +706,99 @@ int connected_form=0;
             depth=1;
         }
         string temp = (*it).first;
-        // dealing with /r in the code
         if (!temp.empty() && temp[temp.size() - 1] == '\r')
                     {temp.erase(temp.size() - 1);}
-       
+        
         printf("Found %s",temp.c_str());
         printf(" at %d with MD5 0 at depth %d\n",(*it).second,depth);
-        
-        
+       
+    }
+    sleep(3);
+    map<int,bool>sendto;
+    for(auto item: C.unique_id){
+        sendto[C.socketmap1[item.second]] = false;
+    }
+    for(auto item : C.filelocation){
+        if(item.second!=0){
+            sendto[C.socketmap1[to_string(item.second)]]=true;
+            string mess3 = "phase3:"+to_string(C.unique_private_id)+":"+item.first+";";
+            C.cust_send2(C.socketmap1[to_string(item.second)],mess3);            
+        }
         
     }
-    sleep(2);
-    //phase3
-    
-    //send message along the unique ids in filelocations asking the file
-    //recv message having the lenght of the file
-    //invoke download function
-
-    //recieve request on for file
-    //send filesize
-    //invoke upload_file
-
-    //phase4
-    string mess4 = "phase4:"+to_string(C.unique_private_id);
-    //for(auto item:C.filelocation){
-    //    cout<<item.first<<" "<<(item.second == 0)<<endl;
-    //}
-    for(auto item:C.filelocation){
-        if(item.second == 0 ){
-            mess4+=":"+item.first;
+    for(auto item: sendto){
+        if(!item.second){
+            string mess3 = "phase3:0:0;";
+            C.cust_send2(item.first,mess3);
         }
     }
-    mess4+=';';
-    //initialise count
-    for(auto item:C.unique_id){
-        C.sendtouid[item.second]=0;
-        C.recvfromuid[item.second]=0;
-    }
-    for(auto item: C.socketmap1){
-        int fds = item.second;
-        C.cust_send2(fds,mess4);
-    }
-    for(int i = 0; i< C.im_neighbours;i++){
-        int fds = client_socket[i];
-        C.cust_recv3(fds);
-    }
+
     
+    for(int i = 0;i<C.im_neighbours;i++){
+        int sd = client_socket[i];
+        process1.push_back(thread(&Client::cust_recv2,&C,sd));
+        //cout<<"here";
+    }
+
+    
+    
+    sleep(3);
+    for(int i = 0; i<C.im_neighbours ;i++){
+        int sd = client_in[i];
+        process1.push_back(thread(&Client::cust_recv2,&C,sd));
+    }
+
+    for (std::thread &t: process1) {
+            if (t.joinable()) {
+                t.join();
+            }
+    }
+
+    sleep(2);
+    cout<<"REACHED HERE"<<endl;
+    for(auto item : C.tothis){
+        string u_id = get<0>(item);
+        string filename = get<1>(item);
+        int size = get<2>(item);
+        FILE* pFile;
+        filename ="./"+filename;  
+        pFile = fopen (filename.c_str() , "r");
+        process1.push_back(thread(&Client::upload_file,&C,C.socketmap1[u_id],filename,size));
+        //process1.push_back(thread(&Client::send_file,&C,pFile,C.socketmap1[u_id]));
+
+    }
+
+    for(auto item : C.fromthis){
+        string u_id = get<0>(item);
+        string filename = get<1>(item);
+        int size = get<2>(item);
+        process1.push_back(thread(&Client::download_file,&C,C.socketmap2[u_id],filename,size));
+        
+    }
+    for (std::thread &t: process1) {
+            if (t.joinable()) {
+                t.join();
+            }
+    }
+    cout<<"exiting"<<endl;
+    sleep(2);
+
+    for(int i = 0; i<C.im_neighbours;i++){
+        string message;
+        C.cust_send2(client_socket[i],mess);
+    }
+    for(int i = 0; i<C.im_neighbours;i++){
+        string mess;
+        C.cust_recv2(client_in[i]);
+    }
+    for(int i = 0; i<C.im_neighbours;i++){
+        string mess;
+        C.cust_send2(client_socket[i],mess);
+    }
+    for(int i = 0; i<C.im_neighbours;i++){
+        string mess;
+        C.cust_recv2(client_in[i]);
+    }
+
     return 0; 
 }
-
