@@ -63,7 +63,8 @@ public:
     map<string ,int> sendto;
     vector<tuple<string,string,int>> tothis;
     vector<tuple<string,string,int>> fromthis;
-
+    map<string,vector<pair<string,int>>> bhejna;
+    map<string,vector<pair<string,int>>> lena;
     void cus_send(int new_socket,fd_set readfds,string mess){
     int on = 0;
     if (ioctl(new_socket, FIONBIO, &on) < 0) {
@@ -96,7 +97,7 @@ void download_file(int sd,string filepath,int fz){
     char buffer[1024];
     while(n>0){
         int val_read = read(sd,buffer,1024);
-        cout<<buffer<<endl;
+        //cout<<buffer<<endl;
         download.write(buffer,val_read);
         n = n - val_read;
     }
@@ -106,6 +107,9 @@ void download_file(int sd,string filepath,int fz){
     string mess="phase3.3;";
     if(send(sd,mess.c_str(),mess.length(),0)<0){
         perror("send");
+    }
+    else{
+        cout<<"message sent"<<endl;
     }
     
 }
@@ -119,17 +123,27 @@ void upload_file(int sd,string filepath,int fz){
         perror("sent");
     }
     else{
-        cout<<"sent bytes "<<sent<<endl;
+        cout<<"sent "<<filepath <<" "<<sent<<endl;
     }
+    char bufferx[1024];
     while(true){
-    int valread  = read(sd,buffer,1024);
+    int valread  = read(sd,bufferx,1024);
     if(valread<0){
         perror("read");
     }
     else{
-        cout<<"form this on"<<buffer<<endl;
-        string s = buffer;
-        if(s=="phase3.3;"){
+        std::istringstream iss(bufferx);
+                    std::string token;
+                    
+                    vector<string> temp2;
+                    while (std::getline(iss, token, ';'))
+                    {
+                        temp2.push_back(token);
+                    }
+        cout<<temp2[0]<<endl;
+        //string s = bufferx;
+        
+        if(temp2[0]=="phase3.3"){
             break;
         }
     }
@@ -137,6 +151,65 @@ void upload_file(int sd,string filepath,int fz){
     }
 }
 
+void prot1(string u_id,vector<pair<string,int>> file_info1,vector<pair<string,int>> file_info2){
+    if(file_info1.size()!=0){
+        for(auto item: file_info1){
+            string filename = item.first;
+            int size = item.second;
+            filename ="./"+filename;  
+            upload_file(socketmap1[u_id],filename,size);
+            sleep(1);
+        }
+        
+    }
+    else{
+        for(auto item:file_info2){
+            string filename = item.first;
+            int size = item.second;
+            cout<<"uplaoding"<<filename;
+            download_file(socketmap2[u_id],filename,size);
+            sleep(1);
+        }
+        
+    }
+}
+void prot2(string u_id,vector<pair<string,int>> file_info1,vector<pair<string,int>> file_info2){
+    if(unique_private_id > stoi(u_id)){
+       
+        for(auto item: file_info1){
+            string filename = item.first;
+            int size = item.second;
+            filename ="./"+filename;  
+            upload_file(socketmap1[u_id],filename,size);
+            sleep(1);
+        }
+        
+        for(auto item:file_info2){
+            string filename = item.first;
+            int size = item.second;
+            cout<<"uplaoding"<<filename;
+            download_file(socketmap2[u_id],filename,size);
+            sleep(1);
+        }
+    }
+    else{
+        for(auto item:file_info2){
+            string filename = item.first;
+            int size = item.second;
+            cout<<"uplaoding"<<filename;
+            download_file(socketmap2[u_id],filename,size);
+            sleep(1);
+        }
+        for(auto item: file_info1){
+            string filename = item.first;
+            int size = item.second;
+            filename ="./"+filename;  
+            upload_file(socketmap1[u_id],filename,size);
+            sleep(1);
+        }
+
+    }
+}
 void cust_recv(int sd){
     
                 int valread,addrlen;
@@ -733,27 +806,67 @@ int connected_form=0;
     }
 
     sleep(10);
-    cout<<"REACHED HERE"<<endl;
-    for(auto item : C.tothis){
-        string u_id = get<0>(item);
-        string filename = get<1>(item);
-        int size = get<2>(item);
-        FILE* pFile;
-        filename ="./"+filename;  
-        pFile = fopen (filename.c_str() , "r");
-        process1.push_back(thread(&Client::upload_file,&C,C.socketmap1[u_id],filename,size));
-        //process1.push_back(thread(&Client::send_file,&C,pFile,C.socketmap1[u_id]));
-        //C.upload_file(C.socketmap1[u_id],filename,size);
+    map<string,bool> bool1;
+    map<string,bool> bool2;
+    for(auto item: C.tothis){
+        vector<pair<string,int>> empty;
+        C.bhejna[get<0>(item)] = empty;
+        bool1[get<0>(item)] = false;
+        bool2[get<0>(item)] = false;
+    }
+    for(auto item: C.fromthis){
+        vector<pair<string,int>> empty;
+        C.lena[get<0>(item)] = empty;
+        bool1[get<0>(item)] = false;
+        bool2[get<0>(item)] = false;
+    }
+    for(auto item: C.tothis){
+       
+        C.bhejna[get<0>(item)].push_back(make_pair(get<1>(item),get<2>(item)));
+        
+        bool1[get<0>(item)] = true;
+
+    }
+    for(auto item: C.fromthis){
+        C.lena[get<0>(item)].push_back(make_pair(get<1>(item),get<2>(item)));
+        bool2[get<0>(item)] = true;
     }
     
-    for(auto item : C.fromthis){
-        string u_id = get<0>(item);
-        string filename = get<1>(item);
-        int size = get<2>(item);
-        cout<<"uplaoding"<<filename;
-        process1.push_back(thread(&Client::download_file,&C,C.socketmap2[u_id],filename,size));
-        //C.download_file(C.socketmap2[u_id],filename,size);
+    cout<<"REACHED HERE"<<endl;
+    for(auto item: bool1){
+        cout<<item.first<<" "<<item.second<<" "<< bool2[item.first];
+        if(item.second!=bool2[item.first]){
+            process1.push_back(thread(&Client::prot1,&C,item.first,C.bhejna[item.first],C.lena[item.first]));
+            //C.prot1(item.first,C.bhejna[item.first],C.lena[item.first]);
+        }
+        else{
+            process1.push_back(thread(&Client::prot2,&C,item.first,C.bhejna[item.first],C.lena[item.first]));
+        }
     }
+
+    
+    // for(auto item : C.tothis){
+    //     string u_id = get<0>(item);
+    //     string filename = get<1>(item);
+    //     int size = get<2>(item);
+    //     FILE* pFile;
+    //     filename ="./"+filename;  
+    //     pFile = fopen (filename.c_str() , "r");
+    //     process1.push_back(thread(&Client::upload_file,&C,C.socketmap1[u_id],filename,size));
+    //     //process1.push_back(thread(&Client::send_file,&C,pFile,C.socketmap1[u_id]));
+    //     //C.upload_file(C.socketmap1[u_id],filename,size);
+    // }
+
+    
+    
+    // for(auto item : C.fromthis){
+    //     string u_id = get<0>(item);
+    //     string filename = get<1>(item);
+    //     int size = get<2>(item);
+    //     cout<<"uplaoding"<<filename;
+    //     process1.push_back(thread(&Client::download_file,&C,C.socketmap2[u_id],filename,size));
+    //     //C.download_file(C.socketmap2[u_id],filename,size);
+    // }
     for (std::thread &t: process1) {
             if (t.joinable()) {
                 t.join();
