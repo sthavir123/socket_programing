@@ -52,10 +52,13 @@ public:
     map<int,bool> connected;
     map<string,string> unique_id;
     map<string,int> filelocation;
-    //vector<pair<string,vector<int>>> fileloc2;
+    
     map<string,int> socketmap1;
     map<string,int> socketmap2;
     map<int,bool>recieved_all;
+    map<string ,int> sendto;
+    vector<tuple<string,string,int>> tothis;
+    vector<tuple<string,string,int>> fromthis;
 
     void cus_send(int new_socket,fd_set readfds,string mess){
     int on = 0;
@@ -63,7 +66,7 @@ public:
                perror("ioctl F_SETFL, FNDELAY");
                exit(1);
           }
-    //mess+=":"+to_string(new_socket);
+    
     if( send(new_socket, mess.c_str(),mess.length(), 0) != mess.length() ) 
             {
                 perror("send");
@@ -76,64 +79,45 @@ public:
     }
 
 
+
+
+
 void download_file(int sd,string filepath,int fz){
-    filepath="./"+filepath;
-    int n = fz;
+    int n  = fz;
     ofstream download;
     download.open(filepath,ios::trunc|ios::out);
-    char buf[1024];
-    cout<<"download form"<<sd<<endl;
+    char buffer[1024];
     while(n>0){
-
-        int val_read = recv(sd,buf,1024,0);
-        cout<<val_read<<endl;
-        download.write(buf,val_read);
-        n = n- val_read;
+        int val_read = read(sd,buffer,1024);
+        download.write(buffer,val_read);
+        n = n - val_read;
     }
     download.close();
-}
-
-void send_file(FILE *fp, int sockfd){
-  int n;
-  char data[1024] = {0};
- 
-  while(fgets(data, 1024, fp) != NULL) {
-    if (send(sockfd, data, sizeof(data), 0) == -1) {
-      perror("[-]Error in sending file.");
-      exit(1);
+    string mess="phase3.3;";
+    if(send(sd,mess.c_str(),mess.length(),0)<0){
+        perror("send");
     }
-    bzero(data, 1024);
-  }
-}
-
-void write_file(int sockfd){
-  int n;
-  FILE *fp;
-  char filename[] = "recv.txt";
-  char buffer[1024];
- 
-  fp = fopen(filename, "w");
-  while (1) {
-    n = recv(sockfd, buffer, 1024, 0);
-    if (n <= 0){
-      break;
-      return;
-    }
-    fprintf(fp, "%s", buffer);
-    bzero(buffer, 1024);
-  }
-  return;
+    
 }
 
 void upload_file(int sd,string filepath,int fz){
+    char buffer[1024];
     int file_fd = open(filepath.c_str(),0);
-    char buff[1024];
-    //cout<<file_fd<<endl;
-    if(file_fd==-1) cout<<"error opening filee at "<<filepath<<endl;
-    read(file_fd,buff,1024);
-    cout<<buff<<endl;
-    int send = sendfile(sd,file_fd,NULL,fz);
-    if (send<0) {cout<<"here "<<endl;perror("send");};
+    if(file_fd==-1) cout<<"ERR...Opening file at: "<<filepath<<endl;
+    int sent = sendfile(sd,file_fd,0,fz);
+    if(sent<0){
+        perror("sent");
+    }
+    else{
+        cout<<"sent bytes "<<sent<<endl;
+    }
+    int valread  = read(sd,buffer,1024);
+    if(valread<0){
+        perror("read");
+    }
+    else{
+        cout<<buffer<<endl;
+    }
 }
 
 void cust_recv(int sd){
@@ -175,7 +159,7 @@ void cust_recv(int sd){
                     if(temp[0]=="phase1"){
                         cout<<"Connected to "<< temp[1]<<" with unique id "<<temp[2]<<" on port "<<temp[3]<<endl;
                         unique_id[temp[1]]=temp[2];
-                        cout<<"sockmap1HERE"<<sd<<endl;
+                        //cout<<"sockmap1HERE"<<sd<<endl;
                         socketmap1[temp[2]] = sd;   
                     }
 
@@ -193,7 +177,7 @@ void cust_send2(int sd,string mess){
         {
             perror("send");
         }
-        else {cout<<mess<<endl; }
+       
 
 }
 
@@ -236,7 +220,7 @@ void cust_recv2(int sd){
                     if(temp[0]=="phase2"){
                         
                         temp.erase(temp.begin());
-                        //socketmap2[unique_id[temp[0]]] = sd;
+                        
                         temp.erase(temp.begin());
                         string mess = "phase2.1:"+to_string(client_id);
                             for(auto token:temp){
@@ -249,11 +233,11 @@ void cust_recv2(int sd){
                             }
                             mess+=";";
 
-                            //cout<<"mess sent "<<mess<<endl;
+                            
                             cust_send2(sd,mess);
                         }
                         else if(temp[0]=="phase2.1"){
-                            cout<<"socketmap2HERE"<<sd<<endl;
+                            //cout<<"socketmap2HERE"<<sd<<endl;
                             socketmap2[unique_id[temp[1]]] = sd;
                             string recvid = temp[1];
                             temp.erase(temp.begin());
@@ -291,26 +275,26 @@ void cust_recv2(int sd){
                                 string filepath = dir_path+temp[2];
                                 int size = getfileSize(filepath);
                                 string mess = "phase3.1:"+to_string(unique_private_id)+":"+ temp[2]+":"+to_string(size)+";";
-                                cout<<mess<<endl;
+                                //cout<<mess<<endl;
                                 cust_send2(sd,mess);
-                                sleep(0.5);
-                                upload_file(socketmap2[temp[1]],dir_path,size);
+                                //sleep(2);
+                                tothis.push_back(make_tuple(temp[1],filepath,size));
+                                //upload_file(socketmap1[temp[1]],dir_path,size);
                             }        
                         }
                         else if(temp[0]=="phase3.1"){
                             
                             if(temp[1]!="0"){
 
-                                cout<<socketmap2[temp[1]]<<" "<<socketmap1[temp[1]]<<endl;
-                                string file_path = dir_path+"/Downloads/"+temp[2];
-                                download_file(socketmap1[temp[1]],file_path,stoi(temp[3]));
-                                cout<<"out"<<endl;
+                                //cout<<socketmap2[temp[1]]<<" "<<socketmap1[temp[1]]<<endl;
+                                string file_path = dir_path+"Downloads/"+temp[2];
+                                cout<<file_path<<endl;
+                                fromthis.push_back(make_tuple(temp[1],file_path,stoi(temp[3])));
+                                
                             }
                         }
                     }
-                    //cout<<temp2.size()<<endl;
-                    
-                    //cout<<(token==NULL)<<endl;
+                   
                     checked++;
                     for(int i=0;i<1024;i++){buffer2[i] = '\0';}
              
@@ -600,7 +584,7 @@ int connected_form=0;
             printf("select error");
             break;
         }
-        //cout<<"here2"<<endl;
+        
 
 
         if (FD_ISSET(master_socket, &readfds)) 
@@ -706,10 +690,7 @@ int connected_form=0;
         }
     }
 
-    for(int i = 0;i<C.im_neighbours;i++){
-        cout<<client_in[i]<<" "<<client_socket[i]<<endl;
-    }
-
+    
     for(int i = 0;i<C.im_neighbours;i++){
         int sd = client_socket[i];
         process1.push_back(thread(&Client::cust_recv2,&C,sd));
@@ -717,7 +698,7 @@ int connected_form=0;
     }
 
     
-    //cout<<"here";
+    
     sleep(3);
     for(int i = 0; i<C.im_neighbours ;i++){
         int sd = client_in[i];
@@ -730,7 +711,33 @@ int connected_form=0;
             }
     }
 
-    sleep(60);
+    sleep(2);
+    cout<<"REACHED HERE"<<endl;
+    for(auto item : C.tothis){
+        string u_id = get<0>(item);
+        string filename = get<1>(item);
+        int size = get<2>(item);
+        FILE* pFile;
+        filename ="./"+filename;  
+        pFile = fopen (filename.c_str() , "r");
+        process1.push_back(thread(&Client::upload_file,&C,C.socketmap1[u_id],filename,size));
+        //process1.push_back(thread(&Client::send_file,&C,pFile,C.socketmap1[u_id]));
 
+    }
+
+    for(auto item : C.fromthis){
+        string u_id = get<0>(item);
+        string filename = get<1>(item);
+        int size = get<2>(item);
+        process1.push_back(thread(&Client::download_file,&C,C.socketmap2[u_id],filename,size));
+        
+    }
+    for (std::thread &t: process1) {
+            if (t.joinable()) {
+                t.join();
+            }
+    }
+    cout<<"exiting"<<endl;
+    //sleep(20);
     return 0; 
 }
