@@ -13,9 +13,9 @@
 #include <thread>
 #include <mutex>
 #include<sys/sendfile.h>
+#include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/mman.h>
-#include <openssl/md5.h>
+
 
 #define CLIENT_MAX  10000
 #define MAXBUF		1024
@@ -33,43 +33,6 @@ int filesfound;
 int checked;
 int connectedto;
 string dir_path;
-
-unsigned char result[MD5_DIGEST_LENGTH];
-
-// Print the MD5 sum as hex-digits.
-void print_md5_sum(unsigned char* md) {
-    int i;
-    for(i=0; i <MD5_DIGEST_LENGTH; i++) {
-            printf("%02x",md[i]);
-    }
-}
-
-// Get the size of the file by its file descriptor
-unsigned long get_size_by_fd(int fd) {
-    struct stat statbuf;
-    if(fstat(fd, &statbuf) < 0) exit(-1);
-    return statbuf.st_size;
-}
-
-void get_md5(string filepath){
-    int file_descript;
-    unsigned long file_size;
-    char* file_buffer;
-
-    file_descript = open(filepath.c_str(), O_RDONLY);
-    if(file_descript < 0) exit(-1);
-
-    file_size = get_size_by_fd(file_descript);
-    printf("file size:\t%lu\n", file_size);
-
-    file_buffer = static_cast<char*>( mmap(0, file_size, PROT_READ, MAP_SHARED, file_descript, 0));
-    MD5((unsigned char*) file_buffer, file_size, result);
-    munmap(file_buffer, file_size); 
-
-    print_md5_sum(result);
-    printf("  %s\n", filepath);
-
-}
 
 long int getfileSize(string filepath){
     ifstream in_file(filepath, ios::binary);
@@ -125,15 +88,21 @@ public:
 
 void download_file(int sd,string filepath,int fz){
     int n  = fz;
+    filepath = "./"+filepath;
+    cout<<filepath<<endl;
+    
     ofstream download;
     download.open(filepath,ios::trunc|ios::out);
     char buffer[1024];
     while(n>0){
         int val_read = read(sd,buffer,1024);
+        cout<<buffer<<endl;
         download.write(buffer,val_read);
         n = n - val_read;
     }
     download.close();
+    cout<<"recived"<<endl;
+    sleep(2);
     string mess="phase3.3;";
     if(send(sd,mess.c_str(),mess.length(),0)<0){
         perror("send");
@@ -152,12 +121,19 @@ void upload_file(int sd,string filepath,int fz){
     else{
         cout<<"sent bytes "<<sent<<endl;
     }
+    while(true){
     int valread  = read(sd,buffer,1024);
     if(valread<0){
         perror("read");
     }
     else{
-        cout<<buffer<<endl;
+        cout<<"form this on"<<buffer<<endl;
+        string s = buffer;
+        if(s=="phase3.3;"){
+            break;
+        }
+    }
+    
     }
 }
 
@@ -198,7 +174,7 @@ void cust_recv(int sd){
                     }
                     
                     if(temp[0]=="phase1"){
-                        cout<<"Connected to "<< temp[1]<<" with unique id "<<temp[2]<<" on port "<<temp[3]<<endl;
+                        //cout<<"Connected to "<< temp[1]<<" with unique id "<<temp[2]<<" on port "<<temp[3]<<endl;
                         unique_id[temp[1]]=temp[2];
                         //cout<<"sockmap1HERE"<<sd<<endl;
                         socketmap1[temp[2]] = sd;   
@@ -237,7 +213,7 @@ void cust_recv2(int sd){
             close(sd);
         }
         else if(buffer2[0]!='\0'){
-                    //cout<<buffer2<<endl;
+                    cout<<buffer2<<endl;
 
                     std::istringstream iss(buffer2);
                     std::string token;
@@ -328,8 +304,8 @@ void cust_recv2(int sd){
                             if(temp[1]!="0"){
 
                                 //cout<<socketmap2[temp[1]]<<" "<<socketmap1[temp[1]]<<endl;
-                                string file_path = dir_path+"Downloads/"+temp[2];
-                                cout<<file_path<<endl;
+                                string file_path = dir_path+"Downloaded/"+temp[2];
+                                //cout<<file_path<<endl;
                                 fromthis.push_back(make_tuple(temp[1],file_path,stoi(temp[3])));
                                 
                             }
@@ -404,6 +380,8 @@ checked=0;
 connectedto=0;
 int connected_form=0;
 
+
+
 // getting data   
     
     if(argc!=3){
@@ -413,7 +391,9 @@ int connected_form=0;
     ifstream indata;
     string config = argv[1]; 
     dir_path = argv[2];
-    
+    string dirname = "./"+dir_path+"/Downloaded";
+    int check = mkdir(dirname.c_str(),0777);
+    cout<<check<<endl;
     Client C; // our client
 
     // Open Config file
@@ -752,7 +732,7 @@ int connected_form=0;
             }
     }
 
-    sleep(2);
+    sleep(10);
     cout<<"REACHED HERE"<<endl;
     for(auto item : C.tothis){
         string u_id = get<0>(item);
@@ -763,15 +743,16 @@ int connected_form=0;
         pFile = fopen (filename.c_str() , "r");
         process1.push_back(thread(&Client::upload_file,&C,C.socketmap1[u_id],filename,size));
         //process1.push_back(thread(&Client::send_file,&C,pFile,C.socketmap1[u_id]));
-
+        //C.upload_file(C.socketmap1[u_id],filename,size);
     }
-
+    
     for(auto item : C.fromthis){
         string u_id = get<0>(item);
         string filename = get<1>(item);
         int size = get<2>(item);
+        cout<<"uplaoding"<<filename;
         process1.push_back(thread(&Client::download_file,&C,C.socketmap2[u_id],filename,size));
-        
+        //C.download_file(C.socketmap2[u_id],filename,size);
     }
     for (std::thread &t: process1) {
             if (t.joinable()) {
@@ -779,6 +760,8 @@ int connected_form=0;
             }
     }
     cout<<"exiting"<<endl;
-    //sleep(20);
+    
+   
+    
     return 0; 
 }
