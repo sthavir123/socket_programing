@@ -15,7 +15,8 @@
 #include<sys/sendfile.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-
+#include <sys/mman.h>
+#include <openssl/md5.h>
 
 #define CLIENT_MAX  10000
 #define MAXBUF		1024
@@ -33,6 +34,44 @@ int filesfound;
 int checked;
 int connectedto;
 string dir_path;
+
+unsigned char result[MD5_DIGEST_LENGTH];
+mutex mtx;
+// Print the MD5 sum as hex-digits.
+void print_md5_sum(unsigned char* md) {
+    int i;
+    for(i=0; i <MD5_DIGEST_LENGTH; i++) {
+            printf("%02x",md[i]);
+    }
+}
+
+// Get the size of the file by its file descriptor
+unsigned long get_size_by_fd(int fd) {
+    struct stat statbuf;
+    if(fstat(fd, &statbuf) < 0) exit(-1);
+    return statbuf.st_size;
+}
+
+void get_md5(string filepath){
+    int file_descript;
+    unsigned long file_size;
+    char* file_buffer;
+
+    file_descript = open(filepath.c_str(), O_RDONLY);
+    if(file_descript < 0) exit(-1);
+
+    file_size = get_size_by_fd(file_descript);
+    printf("file size:\t%lu\n", file_size);
+
+    file_buffer = static_cast<char*>( mmap(0, file_size, PROT_READ, MAP_SHARED, file_descript, 0));
+    MD5((unsigned char*) file_buffer, file_size, result);
+    munmap(file_buffer, file_size); 
+
+    print_md5_sum(result);
+    //printf("  %s\n", filepath);
+
+}
+
 
 long int getfileSize(string filepath){
     ifstream in_file(filepath, ios::binary);
@@ -90,7 +129,7 @@ public:
 void download_file(int sd,string filepath,int fz){
     int n  = fz;
     filepath = "./"+filepath;
-    cout<<filepath<<endl;
+    //cout<<filepath<<endl;
     
     ofstream download;
     download.open(filepath,ios::trunc|ios::out);
@@ -102,15 +141,13 @@ void download_file(int sd,string filepath,int fz){
         n = n - val_read;
     }
     download.close();
-    cout<<"recived"<<endl;
+    
     sleep(2);
     string mess="phase3.3;";
     if(send(sd,mess.c_str(),mess.length(),0)<0){
         perror("send");
     }
-    else{
-        cout<<"message sent"<<endl;
-    }
+    
     
 }
 
@@ -122,9 +159,7 @@ void upload_file(int sd,string filepath,int fz){
     if(sent<0){
         perror("sent");
     }
-    else{
-        cout<<"sent "<<filepath <<" "<<sent<<endl;
-    }
+    
     char bufferx[1024];
     while(true){
     int valread  = read(sd,bufferx,1024);
@@ -166,7 +201,7 @@ void prot1(string u_id,vector<pair<string,int>> file_info1,vector<pair<string,in
         for(auto item:file_info2){
             string filename = item.first;
             int size = item.second;
-            cout<<"uplaoding"<<filename;
+            //cout<<"downloading"<<filename<<endl;
             download_file(socketmap2[u_id],filename,size);
             sleep(1);
         }
@@ -187,7 +222,7 @@ void prot2(string u_id,vector<pair<string,int>> file_info1,vector<pair<string,in
         for(auto item:file_info2){
             string filename = item.first;
             int size = item.second;
-            cout<<"uplaoding"<<filename;
+            //cout<<"uplaoding"<<filename;
             download_file(socketmap2[u_id],filename,size);
             sleep(1);
         }
@@ -196,7 +231,7 @@ void prot2(string u_id,vector<pair<string,int>> file_info1,vector<pair<string,in
         for(auto item:file_info2){
             string filename = item.first;
             int size = item.second;
-            cout<<"uplaoding"<<filename;
+            //cout<<"uplaoding"<<filename;
             download_file(socketmap2[u_id],filename,size);
             sleep(1);
         }
@@ -214,23 +249,24 @@ void cust_recv(int sd){
     
                 int valread,addrlen;
                 struct sockaddr_in address;
-            
-                valread = read( sd , buffer2, 1024);
+                char localbuff[1024];
+                valread = read( sd , localbuff, 1024);
                 
+                //localbuff = buffer2;
                 if (valread == 0)
                 {
                     //Somebody disconnected , get his details and print
-                    getpeername(sd , (struct sockaddr*)&address , (socklen_t*)&addrlen);
+                    //getpeername(sd , (struct sockaddr*)&address , (socklen_t*)&addrlen);
                     close( sd );
                 }
                 
                 //Echo back the message that came in
                 
         else{
-            if(buffer2[0]!='\0'){
-                    //cout<<buffer2<<endl;
+            if(localbuff[0]!='\0'){
+                    //cout<<localbuff<<endl;
 
-                    std::istringstream iss(buffer2);
+                    std::istringstream iss(localbuff);
                     std::string token;
                     vector<string> temp;
                     vector<string> temp2;
@@ -247,7 +283,7 @@ void cust_recv(int sd){
                     }
                     
                     if(temp[0]=="phase1"){
-                        //cout<<"Connected to "<< temp[1]<<" with unique id "<<temp[2]<<" on port "<<temp[3]<<endl;
+                        cout<<"Connected to "<< temp[1]<<" with unique id "<<temp[2]<<" on port "<<temp[3]<<endl;
                         unique_id[temp[1]]=temp[2];
                         //cout<<"sockmap1HERE"<<sd<<endl;
                         socketmap1[temp[2]] = sd;   
@@ -255,7 +291,7 @@ void cust_recv(int sd){
 
                     
                     }
-                    for(int i=0;i<1024;i++){buffer2[i] = '\0';}
+                    for(int i=0;i<1024;i++){localbuff[i] = '\0';}
                     
                 }
             
@@ -267,6 +303,7 @@ void cust_send2(int sd,string mess){
         {
             perror("send");
         }
+        
        
 
 }
@@ -278,17 +315,19 @@ void cust_recv2(int sd){
                perror("ioctl F_SETFL, FNDELAY");
                //exit(1);
           }
-    
+    char localbuff[1024];
+    for(int i=0;i<1024;i++){localbuff[i] = '\0';}
         int valread,addrlen;
         struct sockaddr_in address;
-        valread = read( sd , buffer2, 1024);
+        valread = read( sd , localbuff, 1024);
+        
         if(valread == 0){
             close(sd);
         }
-        else if(buffer2[0]!='\0'){
-                    cout<<buffer2<<endl;
+        else if(localbuff[0]!='\0'){
+                    //cout<<"this buffer"<<localbuff<<endl;
 
-                    std::istringstream iss(buffer2);
+                    std::istringstream iss(localbuff);
                     std::string token;
                     
                     
@@ -362,31 +401,53 @@ void cust_recv2(int sd){
                                 cust_send2(sd,mess);
                             }
                             else{
-                                string filepath = dir_path+temp[2];
-                                int size = getfileSize(filepath);
-                                string mess = "phase3.1:"+to_string(unique_private_id)+":"+ temp[2]+":"+to_string(size)+";";
-                                //cout<<mess<<endl;
+                                string uni_id = temp[1];
+                                temp.erase(temp.begin());
+                                temp.erase(temp.begin());
+                                string mess = "phase3.1:"+to_string(unique_private_id);
+                                for(auto item: temp){
+                                    string filepath = dir_path+item;
+                                    int size = getfileSize(filepath);
+                                    mess+=":"+item+":"+to_string(size);
+
+                                    //string mess = "phase3.1:"+to_string(unique_private_id)+":"+ temp[2]+":"+to_string(size)+";";
+                                    tothis.push_back(make_tuple(uni_id,filepath,size));
+                                }
+                                mess+=";";
+                                //cout<<"mess: "<<mess<<endl;
                                 cust_send2(sd,mess);
-                                //sleep(2);
-                                tothis.push_back(make_tuple(temp[1],filepath,size));
+                                //sleep(1);
+                                   
                                 //upload_file(socketmap1[temp[1]],dir_path,size);
+                                
                             }        
                         }
                         else if(temp[0]=="phase3.1"){
                             
                             if(temp[1]!="0"){
-
-                                //cout<<socketmap2[temp[1]]<<" "<<socketmap1[temp[1]]<<endl;
-                                string file_path = dir_path+"Downloaded/"+temp[2];
-                                //cout<<file_path<<endl;
-                                fromthis.push_back(make_tuple(temp[1],file_path,stoi(temp[3])));
+                                string u_id = temp[1];
+                                temp.erase(temp.begin());
+                                temp.erase(temp.begin());
                                 
+                                int i = 0;
+                                while(i<temp.size()){
+                                //cout<<socketmap2[temp[1]]<<" "<<socketmap1[temp[1]]<<endl;
+                                    string file_path = dir_path+"Downloaded/"+temp[i];
+                                    //cout<<"This to file "<<temp[i]<<endl;
+                                    i+=1;
+                                //cout<<file_path<<endl;
+                                    //cout<<"This to int "<<temp[i]<<endl;
+                                    fromthis.push_back(make_tuple(u_id,file_path,stoi(temp[i])));
+                                    i+=1;
+                                }
                             }
                         }
+                        
+                        
                     }
                    
                     checked++;
-                    for(int i=0;i<1024;i++){buffer2[i] = '\0';}
+                    
              
             
         }
@@ -573,7 +634,7 @@ int connected_form=0;
     timeout.tv_usec = 0;   
   
     //info string
-    string mess = "phase1:"+to_string(C.client_id) +":" +to_string(C.unique_private_id)+ ":" + to_string(C.in_port);
+    string mess = "phase1:"+to_string(C.client_id) +":" +to_string(C.unique_private_id)+ ":" + to_string(C.in_port)+";";
     // initialise client_socket to 0
     for(i = 0; i<max_clients; i++){
         client_socket[i]=0;
@@ -720,7 +781,7 @@ int connected_form=0;
         sd = client_in[i];
         C.cust_recv(sd);
     }
-    sleep(2);
+    sleep(5);
 
 //phase 2
     
@@ -730,7 +791,7 @@ int connected_form=0;
         C.cust_send2(sd,mess1);
     }
     for(int i = 0;i<C.im_neighbours;i++){
-        C.recieved_all[sd]=0;
+        C.recieved_all[sd]=false;
     }
     for(int i =0 ;i < C.im_neighbours;i++){
         sd = client_in[i];
@@ -740,11 +801,11 @@ int connected_form=0;
     //phase2.1
     for(int i = 0; i < C.im_neighbours;i++){
         sd = client_socket[i];
-        //if(!C.recieved_all[sd]){
+        if(!C.recieved_all[sd]){
             //cout<<"recieved2"<<endl;
             C.cust_recv2(sd);
             
-        //}
+        }
      }
     
     for(auto it = C.filelocation.begin();it!=C.filelocation.end();it++){
@@ -765,21 +826,50 @@ int connected_form=0;
        
     }
     sleep(3);
+
+    //phase3
+
     map<int,bool>sendto;
     for(auto item: C.unique_id){
         sendto[C.socketmap1[item.second]] = false;
     }
-    for(auto item : C.filelocation){
+    map<int,vector<string>> appendfile;
+    for(auto item: C.filelocation){
+        vector<string>empty;
         if(item.second!=0){
-            sendto[C.socketmap1[to_string(item.second)]]=true;
-            string mess3 = "phase3:"+to_string(C.unique_private_id)+":"+item.first+";";
-            C.cust_send2(C.socketmap1[to_string(item.second)],mess3);            
+            appendfile[item.second]=empty;
         }
-        
     }
+    for(auto item: C.filelocation){
+        if(item.second!=0){
+            appendfile[item.second].push_back(item.first);
+            
+        }
+    }
+    for(auto item:appendfile){
+        sendto[C.socketmap1[to_string(item.first)]]=true;
+        //string mess3 = "phase3:"+to_string(C.unique_private_id)+":"+item.first+";";
+            string mess3 = "phase3:"+to_string(C.unique_private_id);
+            for(auto it:item.second){
+                mess3+=":"+it;
+            }
+            mess3+=";";
+            //cout<<"Sent this:"<<mess3<<endl;
+            C.cust_send2(C.socketmap1[to_string(item.first)],mess3);
+    }
+    // for(auto item : C.filelocation){
+    //     if(item.second!=0){
+    //         sendto[C.socketmap1[to_string(item.second)]]=true;
+    //         string mess3 = "phase3:"+to_string(C.unique_private_id)+":"+item.first+";";
+    //         cout<<"Sent this:"<<mess<<endl;
+    //         C.cust_send2(C.socketmap1[to_string(item.second)],mess3);            
+    //     }
+        
+    // }
     for(auto item: sendto){
         if(!item.second){
             string mess3 = "phase3:0:0;";
+
             C.cust_send2(item.first,mess3);
         }
     }
@@ -794,7 +884,7 @@ int connected_form=0;
     
     
     sleep(3);
-    for(int i = 0; i<C.im_neighbours ;i++){
+    for(int i = 0; i < C.im_neighbours ;i++){
         int sd = client_in[i];
         process1.push_back(thread(&Client::cust_recv2,&C,sd));
     }
@@ -806,6 +896,7 @@ int connected_form=0;
     }
 
     sleep(10);
+    //cout<<"REACHED HERE"<<endl;
     map<string,bool> bool1;
     map<string,bool> bool2;
     for(auto item: C.tothis){
@@ -832,9 +923,10 @@ int connected_form=0;
         bool2[get<0>(item)] = true;
     }
     
-    cout<<"REACHED HERE"<<endl;
+    
+   
     for(auto item: bool1){
-        cout<<item.first<<" "<<item.second<<" "<< bool2[item.first];
+        //cout<<item.first<<" "<<item.second<<" "<< bool2[item.first];
         if(item.second!=bool2[item.first]){
             process1.push_back(thread(&Client::prot1,&C,item.first,C.bhejna[item.first],C.lena[item.first]));
             //C.prot1(item.first,C.bhejna[item.first],C.lena[item.first]);
@@ -873,8 +965,22 @@ int connected_form=0;
             }
     }
     cout<<"exiting"<<endl;
-    
-   
+    sleep(5);
+    for(auto item:C.filelocation){
+        if(item.second!=0){
+            string filename = "./"+dir_path+"Downloaded/"+item.first;
+            cout<<"Found "<<item.first<<" with MD5 ";
+            get_md5(filename);
+            cout<<"at depth 0";
+        }
+        else{
+            cout<<"Found "<<item.first<<" with MD5 0 at depth 0";
+            
+        }
+    }
     
     return 0; 
 }
+
+//phase 4
+
