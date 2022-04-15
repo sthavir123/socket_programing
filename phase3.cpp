@@ -61,8 +61,7 @@ void get_md5(string filepath){
     if(file_descript < 0) exit(-1);
 
     file_size = get_size_by_fd(file_descript);
-    printf("file size:\t%lu\n", file_size);
-
+   
     file_buffer = static_cast<char*>( mmap(0, file_size, PROT_READ, MAP_SHARED, file_descript, 0));
     MD5((unsigned char*) file_buffer, file_size, result);
     munmap(file_buffer, file_size); 
@@ -175,7 +174,7 @@ void upload_file(int sd,string filepath,int fz){
                     {
                         temp2.push_back(token);
                     }
-        cout<<temp2[0]<<endl;
+        //cout<<temp2[0]<<endl;
         //string s = bufferx;
         
         if(temp2[0]=="phase3.3"){
@@ -971,10 +970,10 @@ int connected_form=0;
             string filename = "./"+dir_path+"Downloaded/"+item.first;
             cout<<"Found "<<item.first<<" with MD5 ";
             get_md5(filename);
-            cout<<"at depth 0";
+            cout<<"at depth 0"<<endl;
         }
         else{
-            cout<<"Found "<<item.first<<" with MD5 0 at depth 0";
+            cout<<"Found "<<item.first<<" with MD5 0 at depth 0"<<endl;
             
         }
     }
